@@ -1,0 +1,39 @@
+# Hyperparamètres du pipeline DVC. Une modification ici invalide les stages concernées.
+
+prepare:
+  raw_path: data/raw/aide-publique-au-developpement.csv
+  csv_separator: ";"
+  encoding: utf-8-sig
+  # Marqueurs CAD : NaN -> 0, toute valeur > 0 -> 1.
+  markers:
+    - Genre
+    - Aide a l'environnement
+    - Gouvernance
+    - Biodiversite
+    - Attenuation du changement climatique
+    - Adaptation au changement climatique
+    - Desertification
+    - "Santé genesique, maternelle, neonatale et infantile (SGMNI)"
+    - Reduction du risque de catastrophe
+    - Nutrition
+    - Inclusion des personnes en situation de handicap
+    - FTC
+
+features:
+  target: ratio_don
+  # Colonnes catégorielles encodées en one-hot. Garder le minimum pour éviter
+  # une explosion du nombre de features (cf. cardinalités du dataset APD).
+  categorical:
+    - Agence
+    - Type de financement
+    - Modalités agrégées
+    - Catégorie CAD
+    - Région
+    - Bi/Multi.1
+    - Canal agrege
+    - Secteur
+  numerical:
+    - Annee de declaration
+    - mois_engagement
+  test_size: 0.2
+  random_state: 42
