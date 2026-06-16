@@ -1,0 +1,100 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python -m src.prepare
+    deps:
+    - path: data/raw/aide-publique-au-developpement.csv
+      hash: md5
+      md5: 87657ce5b6f2da554db6c25b4450dabd
+      size: 108588932
+    - path: src/prepare.py
+      hash: md5
+      md5: d556716e10f5185fc3d5bc30195272b2
+      size: 2928
+    params:
+      params.yaml:
+        prepare:
+          raw_path: data/raw/aide-publique-au-developpement.csv
+          csv_separator: ;
+          encoding: utf-8-sig
+          markers:
+          - Genre
+          - Aide a l'environnement
+          - Gouvernance
+          - Biodiversite
+          - Attenuation du changement climatique
+          - Adaptation au changement climatique
+          - Desertification
+          - Santé genesique, maternelle, neonatale et infantile (SGMNI)
+          - Reduction du risque de catastrophe
+          - Nutrition
+          - Inclusion des personnes en situation de handicap
+          - FTC
+    outs:
+    - path: data/processed/apd_clean.parquet
+      hash: md5
+      md5: 90530699884af7e1f26a9fa9ca459b53
+      size: 19959373
+  features:
+    cmd: python -m src.features
+    deps:
+    - path: data/processed/apd_clean.parquet
+      hash: md5
+      md5: 90530699884af7e1f26a9fa9ca459b53
+      size: 19959373
+    - path: src/features.py
+      hash: md5
+      md5: ba8b85279109199a5aeaf7bb7e4ea562
+      size: 2816
+    params:
+      params.yaml:
+        features:
+          target: ratio_don
+          categorical:
+          - Agence
+          - Type de financement
+          - Modalités agrégées
+          - Catégorie CAD
+          - Région
+          - Bi/Multi.1
+          - Canal agrege
+          - Secteur
+          numerical:
+          - Annee de declaration
+          - mois_engagement
+          test_size: 0.2
+          random_state: 42
+        prepare.markers:
+        - Genre
+        - Aide a l'environnement
+        - Gouvernance
+        - Biodiversite
+        - Attenuation du changement climatique
+        - Adaptation au changement climatique
+        - Desertification
+        - Santé genesique, maternelle, neonatale et infantile (SGMNI)
+        - Reduction du risque de catastrophe
+        - Nutrition
+        - Inclusion des personnes en situation de handicap
+        - FTC
+    outs:
+    - path: metrics/features.json
+      hash: md5
+      md5: b0ec2c266edcf7bffa071a05f6a800ba
+      size: 178
+    - path: models/data/X_test.parquet
+      hash: md5
+      md5: 30f55cf9e445788b84c5b2cd594a4cc5
+      size: 190691
+    - path: models/data/X_train.parquet
+      hash: md5
+      md5: ae26dd40b425e099eb6ffa2d6d27e391
+      size: 509569
+    - path: models/data/y_test.parquet
+      hash: md5
+      md5: d290458eeaf0d30fc408fa8b347cc263
+      size: 7402
+    - path: models/data/y_train.parquet
+      hash: md5
+      md5: 41eaf030fb42b805d7456f7d9ffbbd1d
+      size: 25559

@@ -1,0 +1,8 @@
+{
+  "n_rows_after_dropna": 73243,
+  "n_features": 117,
+  "n_train": 58594,
+  "n_test": 14649,
+  "target_mean_train": 0.978467104996533,
+  "target_mean_test": 0.9779729349192416
+}
