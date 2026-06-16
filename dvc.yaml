@@ -1,0 +1,27 @@
+stages:
+  prepare:
+    cmd: python -m src.prepare
+    deps:
+      - src/prepare.py
+      - data/raw/aide-publique-au-developpement.csv
+    params:
+      - prepare
+    outs:
+      - data/processed/apd_clean.parquet
+
+  features:
+    cmd: python -m src.features
+    deps:
+      - src/features.py
+      - data/processed/apd_clean.parquet
+    params:
+      - features
+      - prepare.markers
+    outs:
+      - models/data/X_train.parquet
+      - models/data/X_test.parquet
+      - models/data/y_train.parquet
+      - models/data/y_test.parquet
+    metrics:
+      - metrics/features.json:
+          cache: false

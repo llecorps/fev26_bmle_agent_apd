@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.cache/
+
+# Les artefacts versionnés par DVC sont ignorés via des .gitignore locaux
+# générés par DVC (ex. data/processed/.gitignore). Ne pas ignorer ici les
+# dossiers entiers : les fichiers .dvc et .gitignore locaux DOIVENT être commités.

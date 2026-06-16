@@ -1,0 +1,6 @@
+[core]
+    autostage = true
+    remote = origin
+['remote "origin"']
+    url = s3://dvc
+    endpointurl = https://dagshub.com/llecorps/fev26_bmle_agent_apd.s3
