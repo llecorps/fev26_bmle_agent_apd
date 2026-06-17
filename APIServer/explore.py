@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Header
+from pydantic import BaseModel
 import requests, re
 import tempfile
 import subprocess
@@ -10,13 +11,20 @@ api = FastAPI(
     description="API powered by FastAPI.",
     version="0.0.1")
 
+
+class ChatRequest(BaseModel):
+    message: str
+
+
 @api.post('/explore')
-def post_explore():
+def post_explore(request: ChatRequest):
     """Returns explored data.
     """
 
-    #Generate code using LLM (Mistral-7B)
-    gen_code = generate_code_with_llm()
+    print(f"Requête reçue : {request.message}")
+
+    # Generate code using LLM (Mistral-7B) based on the chat request
+    gen_code = generate_code_with_llm(request.message)
 
     
     # Create a temporary file and write the generated code to it
@@ -40,28 +48,40 @@ def post_explore():
     # Affichage des résultats
     print("\n--- Résultat de l'exécution ---")
     if r.returncode == 0:
-        print(r.stdout)
-        print(r)
+        print(r.stdout)        
     else:
         print("Erreur lors de l'exécution du code Pandas :")
         print(r.stderr)
 
     
+    return {'result': r.stdout, 'error': r.stderr, 'returncode': r.returncode}
 
-    return {'Inference': 'Done'}
-
-def generate_code_with_llm():
+def generate_code_with_llm(chat_request: str) -> str:
     prompt = """[INST] Tu es un expert en analyse de données Python et Pandas. Ton unique tâche est de générer du code Python propre, optimisé et prêt à être exécuté dans un notebook Jupyter.
     CRITÈRES STRICTS :
     1. Ne retourne QUE le code Python à l'intérieur d'un seul bloc de code Markdown (```python ... ```).
     2. Ne saisis AUCUN texte d'introduction, AUCUNE explication, ni AUCUN commentaire après le code.
     3. Si tu as besoin d'expliquer quelque chose, fais-le uniquement sous forme de commentaires DICTÉS À L'INTÉRIEUR du code Python (ex: # Étape 1 : ...).
-    Voici ce que le code doit faire :
-    Charger un fichier '/data/aide-publique-au-developpement_clean.csv' (avec comme paramètre encoding='utf-8', sep=';'), afficher les 10 premières lignes du DataFrame.]
+    
+    Charger un fichier '/data/aide-publique-au-developpement_clean.csv' (avec comme paramètre encoding='utf-8', sep=';').
+    Le fichier CSV contient des données sur l'aide publique au développement. Chaque ligne du fichier représente un projet d'aide publique au développement.
+
+    Toujours utiliser Pandas pour effectuer des opérations sur les données, telles que le filtrage, l'agrégation, le regroupement et la visualisation.
+    Toujours renvoyer le résultat final sous forme de JSON.
+
+
+    
+    
     Format de réponse attendu :
     ```python
     # Ton code ici
-    ``` [/INST]"""
+    ``` [/INST]
+    
+    voici la requête de l'utilisateur :
+    """
+    prompt += chat_request
+
+    print("Prompt envoyé au modèle :", prompt)
 
     # creating a POST request
     r = requests.post('http://host.docker.internal:8000/v1/chat/completions', 
@@ -71,7 +91,8 @@ def generate_code_with_llm():
         "messages": [
             {
                 "role": "user",
-                "content": prompt
+                "content": prompt,
+                "temperature": 0.1
             }
         ]
     })
