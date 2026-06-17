@@ -1,0 +1,25 @@
+
+services:
+  explore-api:
+    build: ./api
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    networks:
+      - chat-network
+
+  ui:
+    build: ./ui
+    ports:
+      - "8500:8500"
+    environment:
+      - API_URL=http://explore-api:8080/explore
+    depends_on:
+      - explore-api
+    networks:
+      - chat-network
+
+networks:
+  chat-network:
+    driver: bridge
