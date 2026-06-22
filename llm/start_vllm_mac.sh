@@ -4,11 +4,21 @@
 # CONFIGURATION
 # ==========================================
 VENV_DIR="$HOME/.venv-vllm-mlx"
-MODEL="mlx-community/Mistral-7B-Instruct-v0.3-4bit"
-PORT=8000
+MODEL="${MODEL:-mlx-community/Mistral-7B-Instruct-v0.3-4bit}"
+PORT="${PORT:-8000}"
 
-# Colle ton jeton Hugging Face (hf_...) entre les guillemets ci-dessous si nécessaire
-HF_TOKEN="<HUGGING_FACE_TOKEN>"
+# Le jeton Hugging Face n'est JAMAIS écrit en dur ici. Il est lu depuis :
+#   1. la variable d'environnement HF_TOKEN, si déjà exportée, sinon
+#   2. un fichier llm/.env (gitignoré), au format : HF_TOKEN=hf_xxx
+# Modèle de référence : llm/.env.example
+ENV_FILE="$(dirname "$0")/.env"
+if [ -f "$ENV_FILE" ]; then
+    echo " Chargement de $ENV_FILE"
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+fi
 # ==========================================
 
 echo "======================================================"
@@ -24,9 +34,9 @@ fi
 echo " Processeur Apple Silicon détecté."
 
 # Authentification Hugging Face (si le token est renseigné)
-if [ -n "$HF_TOKEN" ]; then
-    echo " Jeton Hugging Face configuré."
-    export HF_TOKEN="$HF_TOKEN"
+if [ -n "$HF_TOKEN" ] && [ "$HF_TOKEN" != "<HUGGING_FACE_TOKEN>" ]; then
+    echo " Jeton Hugging Face configuré (via env ou llm/.env)."
+    export HF_TOKEN
 else
     echo "  Aucun HF_TOKEN fourni (généralement OK pour les modèles publics comme Mistral)."
 fi

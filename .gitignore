@@ -5,6 +5,11 @@ __pycache__/
 .DS_Store
 .cache/
 
+# Secrets : tokens, credentials. Ne JAMAIS commiter.
+.env
+*/.env
+!*/.env.example
+
 # Les artefacts versionnés par DVC sont ignorés via des .gitignore locaux
 # générés par DVC (ex. data/processed/.gitignore). Ne pas ignorer ici les
 # dossiers entiers : les fichiers .dvc et .gitignore locaux DOIVENT être commités.
