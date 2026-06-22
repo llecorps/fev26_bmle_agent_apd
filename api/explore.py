@@ -26,6 +26,39 @@ LLM_MODEL = os.getenv("LLM_MODEL", "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
 EXEC_TIMEOUT = float(os.getenv("EXEC_TIMEOUT", "30"))
 
 
+def _build_schema(data_path: str, enum_max: int = 25) -> str:
+    """Décrit les colonnes du dataset pour les injecter dans le prompt.
+
+    Sans ce schéma, un LLM 7B invente des noms de colonnes (ex. 'agency' au
+    lieu de 'Agence'). On liste toutes les colonnes, et pour les catégorielles
+    à faible cardinalité on énumère les valeurs exactes.
+    """
+    try:
+        import pandas as pd
+        df = pd.read_parquet(data_path)
+    except Exception as exc:  # fichier absent (tests) -> pas de schéma
+        print(f"Schéma indisponible ({exc})")
+        return ""
+
+    lines = []
+    for col in df.columns:
+        s = df[col]
+        if s.dtype == object or str(s.dtype) == "string":
+            nunique = s.nunique(dropna=True)
+            if nunique <= enum_max:
+                vals = ", ".join(repr(v) for v in sorted(s.dropna().unique()))
+                lines.append(f"- {col!r} (texte) valeurs: {vals}")
+            else:
+                lines.append(f"- {col!r} (texte, {nunique} valeurs distinctes)")
+        else:
+            lines.append(f"- {col!r} ({s.dtype})")
+    return "\n    ".join(lines)
+
+
+# Schéma construit une fois au démarrage (le parquet est monté dans le conteneur).
+SCHEMA_TEXT = _build_schema(DATA_PATH)
+
+
 class ChatRequest(BaseModel):
     message: str
 
@@ -94,6 +127,9 @@ def generate_code_with_llm(chat_request: str) -> str:
     Charger le fichier de données avec : df = pd.read_parquet('%(data_path)s')
     Le fichier contient des données nettoyées sur l'aide publique au développement française. Chaque ligne représente une déclaration de projet.
 
+    Colonnes du DataFrame (utilise EXACTEMENT ces noms, accents compris) :
+    %(schema)s
+
     Toujours utiliser Pandas pour effectuer des opérations sur les données, telles que le filtrage, l'agrégation et le regroupement.
     Toujours imprimer le résultat final sous forme de JSON avec print(...).
 
@@ -105,7 +141,7 @@ def generate_code_with_llm(chat_request: str) -> str:
     ``` [/INST]
 
     voici la requête de l'utilisateur :
-    """ % {"data_path": DATA_PATH}
+    """ % {"data_path": DATA_PATH, "schema": SCHEMA_TEXT}
     prompt += chat_request
 
     print("Prompt envoyé au modèle :", prompt)
