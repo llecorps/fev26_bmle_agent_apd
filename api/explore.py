@@ -25,6 +25,9 @@ LLM_MODEL = os.getenv("LLM_MODEL", "mlx-community/Mistral-7B-Instruct-v0.3-4bit"
 # Délai max d'exécution du code généré avant kill du subprocess (secondes).
 EXEC_TIMEOUT = float(os.getenv("EXEC_TIMEOUT", "30"))
 
+# Nombre total de tentatives LLM (1 génération + (N-1) réparations sur erreur).
+MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "2"))
+
 
 def _build_schema(data_path: str, enum_max: int = 25) -> str:
     """Décrit les colonnes du dataset pour les injecter dans le prompt.
@@ -63,6 +66,33 @@ class ChatRequest(BaseModel):
     message: str
 
 
+def run_sandboxed(code: str):
+    """Valide (AST) puis exécute le code dans un subprocess isolé avec timeout.
+
+    Retourne (returncode, stdout, stderr). returncode == -1 pour un rejet
+    sandbox ou un timeout (pas d'exécution réelle).
+    """
+    try:
+        validate_code(code)
+    except CodeValidationError as exc:
+        print(f"Code rejeté par la sandbox : {exc}")
+        return -1, "", f"Code rejeté par la sandbox : {exc}"
+
+    with tempfile.NamedTemporaryFile(delete=True, suffix='.py', mode='w+t') as temp_file:
+        temp_file.write(code)
+        temp_file.flush()
+        print(f"Exécution du fichier temporaire : {temp_file.name}")
+        # `-I` : mode isolé. `timeout` : tue le process s'il boucle ou traîne.
+        try:
+            r = subprocess.run([sys.executable, "-I", temp_file.name],
+                               capture_output=True, text=True, timeout=EXEC_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            print(f"Exécution interrompue après {EXEC_TIMEOUT:.0f}s (timeout)")
+            return -1, "", f"Exécution interrompue après {EXEC_TIMEOUT:.0f}s (timeout)"
+
+    return r.returncode, r.stdout, r.stderr
+
+
 @api.post('/explore')
 def post_explore(request: ChatRequest):
     """Returns explored data.
@@ -70,52 +100,37 @@ def post_explore(request: ChatRequest):
 
     print(f"Requête reçue : {request.message}")
 
-    # Generate code using LLM (Mistral-7B) based on the chat request
-    gen_code = generate_code_with_llm(request.message)
+    code = generate_code_with_llm(request.message)
+    returncode, stdout, stderr = -1, "", ""
 
-    # Validation AST AVANT toute exécution : rejette le code dangereux
-    # (imports hors whitelist, eval/exec/open, écritures fichier, ...).
-    try:
-        validate_code(gen_code)
-    except CodeValidationError as exc:
-        print(f"Code rejeté par la sandbox : {exc}")
-        return {'result': '', 'error': f"Code rejeté par la sandbox : {exc}", 'returncode': -1}
+    # Boucle d'auto-réparation : si l'exécution échoue, on renvoie l'erreur au
+    # LLM pour qu'il corrige (un modèle 7B oublie parfois un import ou un nom).
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        print(f"\n--- Tentative {attempt}/{MAX_ATTEMPTS} ---")
+        returncode, stdout, stderr = run_sandboxed(code)
+        if returncode == 0:
+            print(stdout)
+            break
+        print(f"Échec (returncode={returncode}) : {stderr.strip()[-300:]}")
+        if attempt < MAX_ATTEMPTS:
+            code = repair_code_with_llm(request.message, code, stderr)
 
-    # Create a temporary file and write the generated code to it
-    with tempfile.NamedTemporaryFile(delete=True, suffix='.py', mode='w+t') as temp_file:
-        # Write data to the file
-        temp_file.write(gen_code)
-        temp_file.flush()  # Ensure data is written to disk
+    return {'result': stdout, 'error': stderr, 'returncode': returncode}
 
-        # Go back to the beginning of the file to read it
-        temp_file.seek(0)
-        print(f"Temporary file created at: {temp_file.name}")
-        #print(f"Content: {temp_file.read()}")
+def _call_llm(prompt: str) -> str:
+    """Appelle le serveur LLM (API OpenAI-compatible) et renvoie le code extrait."""
+    r = requests.post(LLM_URL,
+                     headers={'Authorization': 'Bearer token', 'Content-Type': 'application/json'},
+                     json={
+        "model": LLM_MODEL,
+        "temperature": 0.1,
+        "messages": [{"role": "user", "content": prompt}],
+    }, timeout=120)
+    response_dict = r.json()
+    generated_code = extract_pure_code(response_dict['choices'][0]['message']['content'])
+    print(generated_code)
+    return generated_code
 
-        print(f"Exécution locale du fichier temporaire : {temp_file.name}\n")
-        # `-I` : mode isolé (ignore variables d'env PYTHON* et user site-packages).
-        # `timeout` : tue le process si le code boucle ou traîne.
-        try:
-            r = subprocess.run([sys.executable, "-I", temp_file.name],
-                               capture_output=True,
-                               text=True,
-                               timeout=EXEC_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            print(f"Exécution interrompue après {EXEC_TIMEOUT:.0f}s (timeout)")
-            return {'result': '', 'error': f"Exécution interrompue après {EXEC_TIMEOUT:.0f}s (timeout)", 'returncode': -1}
-
-    # Once the 'with' block ends, the file is automatically deleted from the disk!
-
-    # Affichage des résultats
-    print("\n--- Résultat de l'exécution ---")
-    if r.returncode == 0:
-        print(r.stdout)
-    else:
-        print("Erreur lors de l'exécution du code Pandas :")
-        print(r.stderr)
-
-
-    return {'result': r.stdout, 'error': r.stderr, 'returncode': r.returncode}
 
 def generate_code_with_llm(chat_request: str) -> str:
     prompt = """[INST] Tu es un expert en analyse de données Python et Pandas. Ton unique tâche est de générer du code Python propre, optimisé et prêt à être exécuté dans un notebook Jupyter.
@@ -123,7 +138,7 @@ def generate_code_with_llm(chat_request: str) -> str:
     1. Ne retourne QUE le code Python à l'intérieur d'un seul bloc de code Markdown (```python ... ```).
     2. Ne saisis AUCUN texte d'introduction, AUCUNE explication, ni AUCUN commentaire après le code.
     3. Si tu as besoin d'expliquer quelque chose, fais-le uniquement sous forme de commentaires DICTÉS À L'INTÉRIEUR du code Python (ex: # Étape 1 : ...).
-    
+
     Charger le fichier de données avec : df = pd.read_parquet('%(data_path)s')
     Le fichier contient des données nettoyées sur l'aide publique au développement française. Chaque ligne représente une déclaration de projet.
 
@@ -131,9 +146,21 @@ def generate_code_with_llm(chat_request: str) -> str:
     %(schema)s
 
     Toujours utiliser Pandas pour effectuer des opérations sur les données, telles que le filtrage, l'agrégation et le regroupement.
-    Toujours imprimer le résultat final sous forme de JSON avec print(...).
+    Commence TOUJOURS par les imports nécessaires : `import pandas as pd` et `import json`.
+    Termine TOUJOURS par print(json.dumps(...)) pour imprimer le résultat final en JSON.
 
     N'importe AUCUN module autre que pandas, numpy et json.
+
+    EXEMPLE pour « Montant moyen de X par catégorie Y » :
+    ```python
+    import pandas as pd
+    import json
+    df = pd.read_parquet('%(data_path)s')
+    resultat = df.groupby('Y')['X'].mean()
+    print(json.dumps(resultat.to_dict(), ensure_ascii=False))
+    ```
+    Adapte les noms de colonnes à la question. Pour un classement, utilise
+    .sort_values(ascending=False).head(n). Pour un comptage, .value_counts().
 
     Format de réponse attendu :
     ```python
@@ -144,32 +171,31 @@ def generate_code_with_llm(chat_request: str) -> str:
     """ % {"data_path": DATA_PATH, "schema": SCHEMA_TEXT}
     prompt += chat_request
 
-    print("Prompt envoyé au modèle :", prompt)
+    print("Prompt envoyé au modèle :", prompt[:500], "...")
+    return _call_llm(prompt)
 
-    # creating a POST request
-    r = requests.post(LLM_URL,
-                     headers={'Authorization': 'Bearer token', 'Content-Type': 'application/json'},
-                     json={
-        "model": LLM_MODEL,
-        "temperature": 0.1,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    }, timeout=120)
 
-    # getting the response elements
-    response_dict = r.json()
+def repair_code_with_llm(chat_request: str, broken_code: str, error: str) -> str:
+    """Renvoie au LLM le code fautif et son erreur d'exécution pour correction."""
+    prompt = """[INST] Le code Python suivant, censé répondre à la question d'un utilisateur, a échoué à l'exécution.
 
-    print("Response Header:", r.headers)
-    #fix ->#print("Status Code:", r.headers['status'])
-    #print("Response Body:", response_dict)
-    generated_code = extract_pure_code(response_dict['choices'][0]['message']['content'])
-    print(generated_code)
+    Question : %(question)s
 
-    return generated_code
+    Code fautif :
+    ```python
+    %(code)s
+    ```
+
+    Erreur :
+    %(error)s
+
+    Corrige le code. Règles : pas d'import autre que pandas/numpy/json, commence par les imports,
+    termine par print(json.dumps(...)). Charge les données avec pd.read_parquet('%(data_path)s').
+    Ne retourne QUE le code corrigé dans un bloc ```python ... ```. [/INST]
+    """ % {"question": chat_request, "code": broken_code,
+           "error": error.strip()[-800:], "data_path": DATA_PATH}
+    print("Réparation demandée au modèle.")
+    return _call_llm(prompt)
 
 
 def extract_pure_code(llm_response: str) -> str:
