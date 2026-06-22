@@ -2,21 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Installer les dépendances système nécessaires (si besoin de compiler certains packages)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir \
-    fastapi \
-    uvicorn \
-    requests \
-    pandas
-
+# Dépendances Python épinglées (pandas/numpy ont des wheels sur slim,
+# pas besoin de build-essential).
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY explore.py /app/explore.py
+COPY sandbox.py /app/sandbox.py
 
-# Créer un dossier pour accueillir le fichier CSV de données
+# Point de montage du volume de données (monté en lecture seule via compose).
 RUN mkdir /data
 
 EXPOSE 8080

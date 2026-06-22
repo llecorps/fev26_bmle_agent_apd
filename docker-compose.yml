@@ -5,7 +5,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data
+      - ./data:/data:ro
+    environment:
+      - DATA_PATH=/data/processed/apd_clean.parquet
     networks:
       - chat-network
 

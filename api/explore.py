@@ -4,12 +4,26 @@ import requests, re
 import tempfile
 import subprocess
 import sys
+import os
+
+from sandbox import validate_code, CodeValidationError
 
 
 api = FastAPI(
     title="REST API",
     description="API powered by FastAPI.",
     version="0.0.1")
+
+# Fichier de données exposé au code généré. Par défaut la sortie du pipeline DVC
+# (data/processed/apd_clean.parquet) montée dans le conteneur sous /data.
+DATA_PATH = os.getenv("DATA_PATH", "/data/processed/apd_clean.parquet")
+
+# Endpoint du serveur LLM (vLLM/MLX), surchargeable hors Docker Desktop.
+LLM_URL = os.getenv("LLM_URL", "http://host.docker.internal:8000/v1/chat/completions")
+LLM_MODEL = os.getenv("LLM_MODEL", "mlx-community/Mistral-7B-Instruct-v0.3-4bit")
+
+# Délai max d'exécution du code généré avant kill du subprocess (secondes).
+EXEC_TIMEOUT = float(os.getenv("EXEC_TIMEOUT", "30"))
 
 
 class ChatRequest(BaseModel):
@@ -26,7 +40,14 @@ def post_explore(request: ChatRequest):
     # Generate code using LLM (Mistral-7B) based on the chat request
     gen_code = generate_code_with_llm(request.message)
 
-    
+    # Validation AST AVANT toute exécution : rejette le code dangereux
+    # (imports hors whitelist, eval/exec/open, écritures fichier, ...).
+    try:
+        validate_code(gen_code)
+    except CodeValidationError as exc:
+        print(f"Code rejeté par la sandbox : {exc}")
+        return {'result': '', 'error': f"Code rejeté par la sandbox : {exc}", 'returncode': -1}
+
     # Create a temporary file and write the generated code to it
     with tempfile.NamedTemporaryFile(delete=True, suffix='.py', mode='w+t') as temp_file:
         # Write data to the file
@@ -39,21 +60,28 @@ def post_explore(request: ChatRequest):
         #print(f"Content: {temp_file.read()}")
 
         print(f"Exécution locale du fichier temporaire : {temp_file.name}\n")
-        r = subprocess.run([sys.executable, temp_file.name], 
-                           capture_output=True, 
-                           text=True)
-        
+        # `-I` : mode isolé (ignore variables d'env PYTHON* et user site-packages).
+        # `timeout` : tue le process si le code boucle ou traîne.
+        try:
+            r = subprocess.run([sys.executable, "-I", temp_file.name],
+                               capture_output=True,
+                               text=True,
+                               timeout=EXEC_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            print(f"Exécution interrompue après {EXEC_TIMEOUT:.0f}s (timeout)")
+            return {'result': '', 'error': f"Exécution interrompue après {EXEC_TIMEOUT:.0f}s (timeout)", 'returncode': -1}
+
     # Once the 'with' block ends, the file is automatically deleted from the disk!
 
     # Affichage des résultats
     print("\n--- Résultat de l'exécution ---")
     if r.returncode == 0:
-        print(r.stdout)        
+        print(r.stdout)
     else:
         print("Erreur lors de l'exécution du code Pandas :")
         print(r.stderr)
 
-    
+
     return {'result': r.stdout, 'error': r.stderr, 'returncode': r.returncode}
 
 def generate_code_with_llm(chat_request: str) -> str:
@@ -63,43 +91,42 @@ def generate_code_with_llm(chat_request: str) -> str:
     2. Ne saisis AUCUN texte d'introduction, AUCUNE explication, ni AUCUN commentaire après le code.
     3. Si tu as besoin d'expliquer quelque chose, fais-le uniquement sous forme de commentaires DICTÉS À L'INTÉRIEUR du code Python (ex: # Étape 1 : ...).
     
-    Charger un fichier '/data/aide-publique-au-developpement_clean.csv' (avec comme paramètre encoding='utf-8', sep=';').
-    Le fichier CSV contient des données sur l'aide publique au développement. Chaque ligne du fichier représente un projet d'aide publique au développement.
+    Charger le fichier de données avec : df = pd.read_parquet('%(data_path)s')
+    Le fichier contient des données nettoyées sur l'aide publique au développement française. Chaque ligne représente une déclaration de projet.
 
-    Toujours utiliser Pandas pour effectuer des opérations sur les données, telles que le filtrage, l'agrégation, le regroupement et la visualisation.
-    Toujours renvoyer le résultat final sous forme de JSON.
+    Toujours utiliser Pandas pour effectuer des opérations sur les données, telles que le filtrage, l'agrégation et le regroupement.
+    Toujours imprimer le résultat final sous forme de JSON avec print(...).
 
+    N'importe AUCUN module autre que pandas, numpy et json.
 
-    
-    
     Format de réponse attendu :
     ```python
     # Ton code ici
     ``` [/INST]
-    
+
     voici la requête de l'utilisateur :
-    """
+    """ % {"data_path": DATA_PATH}
     prompt += chat_request
 
     print("Prompt envoyé au modèle :", prompt)
 
     # creating a POST request
-    r = requests.post('http://host.docker.internal:8000/v1/chat/completions', 
-                     headers={'Authorization': 'Bearer token', 'Content-Type': 'application/json'}, 
+    r = requests.post(LLM_URL,
+                     headers={'Authorization': 'Bearer token', 'Content-Type': 'application/json'},
                      json={
-        "model": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+        "model": LLM_MODEL,
+        "temperature": 0.1,
         "messages": [
             {
                 "role": "user",
-                "content": prompt,
-                "temperature": 0.1
+                "content": prompt
             }
         ]
-    })
+    }, timeout=120)
 
     # getting the response elements
     response_dict = r.json()
-        
+
     print("Response Header:", r.headers)
     #fix ->#print("Status Code:", r.headers['status'])
     #print("Response Body:", response_dict)
