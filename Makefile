@@ -62,8 +62,8 @@ llm:  ## Démarre le serveur LLM local (port 8000, lit llm/.env)
 .PHONY: up
 up: $(DATA)  ## Build + démarre l'API et l'UI (nécessite les données et le LLM)
 	$(COMPOSE) up --build -d
-	@echo "UI    : http://localhost:8500"
-	@echo "API   : http://localhost:8080/explore"
+	@echo "UI    : http://localhost:$${UI_PORT:-8500}"
+	@echo "API   : http://localhost:$${API_PORT:-8081}/explore"
 	@echo "Rappel: le serveur LLM doit tourner ('make llm' dans un autre terminal)."
 
 .PHONY: down

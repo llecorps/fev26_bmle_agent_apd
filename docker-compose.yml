@@ -2,8 +2,11 @@
 services:
   explore-api:
     build: ./api
+    # Port HÔTE configurable (défaut 8081 pour éviter la collision avec Airflow
+    # & co sur 8080). Le port INTERNE reste 8080 : l'UI joint l'API via le
+    # réseau Docker sur explore-api:8080, indépendamment du mapping hôte.
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8081}:8080"
     volumes:
       - ./data:/data:ro
     environment:
@@ -14,7 +17,7 @@ services:
   ui:
     build: ./ui
     ports:
-      - "8500:8500"
+      - "${UI_PORT:-8500}:8500"
     environment:
       - API_URL=http://explore-api:8080/explore
     depends_on:
