@@ -1,16 +1,24 @@
 
 services:
   explore-api:
-    build: ./api
-    # Port HÔTE configurable (défaut 8081 pour éviter la collision avec Airflow
-    # & co sur 8080). Le port INTERNE reste 8080 : l'UI joint l'API via le
-    # réseau Docker sur explore-api:8080, indépendamment du mapping hôte.
+    build: ./api/explore
     ports:
       - "${API_PORT:-8081}:8080"
     volumes:
       - ./data:/data:ro
     environment:
       - DATA_PATH=/data/processed/apd_clean.parquet
+    networks:
+      - chat-network
+
+  predict-api:
+    build: ./api/predict
+    ports:
+      - "${PREDICT_PORT:-8082}:8080"
+    environment:
+      - MODEL_PATH=/models/data/pipline.joblib
+    volumes:
+      - ./models/data:/app/model:ro
     networks:
       - chat-network
 
@@ -22,6 +30,7 @@ services:
       - API_URL=http://explore-api:8080/explore
     depends_on:
       - explore-api
+      - predict-api
     networks:
       - chat-network
 
