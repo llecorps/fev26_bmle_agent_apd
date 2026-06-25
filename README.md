@@ -123,6 +123,41 @@ Le code généré par le LLM est exécuté, donc encadré en profondeur :
 | `LLM_MODEL`    | `mistral:7b`                                        | Modèle servi                  |
 | `EXEC_TIMEOUT` | `30`                                                | Timeout d'exécution (s)       |
 
+## Sécurité — API Key
+
+Les endpoints `/explore` et `/predict` supportent une authentification par clé API via le header `X-API-Key`.
+
+**En développement local** — auth désactivée par défaut, aucune configuration requise :
+
+```bash
+make up
+```
+
+**Avec auth activée** (recommandé pour un déploiement ou une démo publique) :
+
+```bash
+API_KEY=mon-secret make up
+```
+
+Toute requête sans le header correct reçoit un `403 Forbidden` :
+
+```bash
+# ✅ Requête valide
+curl -X POST http://localhost:8081/explore \
+     -H "X-API-Key: mon-secret" \
+     -H "Content-Type: application/json" \
+     -d '{"message": "Quels sont les 5 pays qui reçoivent le plus d'aide ?"}'
+
+# ❌ Sans clé → 403
+curl -X POST http://localhost:8081/explore \
+     -H "Content-Type: application/json" \
+     -d '{"message": "..."}'
+```
+
+L'UI Streamlit propage automatiquement la clé — aucune configuration supplémentaire nécessaire côté interface.
+
+> Ne jamais commiter la valeur de `API_KEY`. La passer uniquement via variable d'environnement ou un fichier `.env` gitignoré.
+
 ## Commandes make
 
 ```
