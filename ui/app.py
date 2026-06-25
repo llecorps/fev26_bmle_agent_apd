@@ -5,6 +5,8 @@ import os
 # ─── URLs des API (configurables via Docker) ─────
 EXPLORE_API_URL = os.getenv("EXPLORE_API_URL", "http://explore-api:8080/explore")
 PREDICT_API_URL = os.getenv("PREDICT_API_URL", "http://predict-api:8080")
+API_KEY = os.getenv("API_KEY", "")
+AUTH_HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
 # ─── Sidebar ─────────────────────────────────────
 st.sidebar.title("🌍 APD France")
@@ -57,7 +59,7 @@ if page == "Chatbot Exploration":
         with st.chat_message("assistant"):
             with st.spinner("Le chatbot réfléchit... "):
                 try:
-                    response = requests.post(EXPLORE_API_URL, json={"message": prompt})
+                    response = requests.post(EXPLORE_API_URL, json={"message": prompt}, headers=AUTH_HEADERS)
                     response.raise_for_status()
                     data = response.json()
                     bot_reply = data.get("result", "")
@@ -92,7 +94,7 @@ if page == "Prédictions":
     def load_features():
         """Récupère la liste des features et les valeurs possibles depuis l'API."""
         try:
-            resp = requests.get(f"{PREDICT_API_URL}/model/features", timeout=10)
+            resp = requests.get(f"{PREDICT_API_URL}/model/features", timeout=10, headers=AUTH_HEADERS)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -150,6 +152,7 @@ if page == "Prédictions":
                 resp = requests.post(
                     f"{PREDICT_API_URL}/predict",
                     json={"features": features},
+                    headers=AUTH_HEADERS,
                     timeout=30
                 )
                 resp.raise_for_status()

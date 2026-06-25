@@ -10,12 +10,21 @@ from contextlib import asynccontextmanager
 import joblib
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel, Field
 
 # ─── Config ──────────────────────────────────────
 MODEL_DIR = Path(__file__).parent / "model"
 logger = logging.getLogger("apd-api")
+
+import os
+API_KEY = os.getenv("API_KEY", "")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+def require_api_key(key: str = Security(api_key_header)):
+    if API_KEY and key != API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
 # ─── Model loading ───────────────────────────────
 pipeline = None
@@ -110,7 +119,7 @@ def model_features():
     }
 
 
-@app.post("/predict", response_model=PredictResponse)
+@app.post("/predict", response_model=PredictResponse, dependencies=[Security(require_api_key)])
 def predict(req: PredictRequest):
     """Prédit le montant d'engagement à partir des features du projet."""
     if pipeline is None:

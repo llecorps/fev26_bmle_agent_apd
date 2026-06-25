@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, HTTPException, Security
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 import requests, re
 import tempfile
@@ -13,6 +14,13 @@ api = FastAPI(
     title="REST API",
     description="API powered by FastAPI.",
     version="0.0.1")
+
+API_KEY = os.getenv("API_KEY", "")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+def require_api_key(key: str = Security(api_key_header)):
+    if API_KEY and key != API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing API key")
 
 # Fichier de données exposé au code généré. Par défaut la sortie du pipeline DVC
 # (data/processed/apd_clean.parquet) montée dans le conteneur sous /data.
@@ -93,7 +101,7 @@ def run_sandboxed(code: str):
     return r.returncode, r.stdout, r.stderr
 
 
-@api.post('/explore')
+@api.post('/explore', dependencies=[Security(require_api_key)])
 def post_explore(request: ChatRequest):
     """Returns explored data.
     """

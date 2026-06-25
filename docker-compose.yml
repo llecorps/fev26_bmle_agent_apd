@@ -19,6 +19,7 @@ services:
       - DATA_PATH=/data/processed/apd_clean.parquet
       - LLM_URL=http://ollama:11434/v1/chat/completions
       - LLM_MODEL=mistral:7b
+      - API_KEY=${API_KEY:-}
     depends_on:
       - ollama
     networks:
@@ -30,6 +31,7 @@ services:
       - "${PREDICT_PORT:-8082}:8080"
     environment:
       - MODEL_PATH=/models/data/pipline.joblib
+      - API_KEY=${API_KEY:-}
     volumes:
       - ./models/data:/app/model:ro
     networks:
@@ -41,6 +43,7 @@ services:
       - "${UI_PORT:-8500}:8500"
     environment:
       - API_URL=http://explore-api:8080/explore
+      - API_KEY=${API_KEY:-}
     depends_on:
       - explore-api
       - predict-api
