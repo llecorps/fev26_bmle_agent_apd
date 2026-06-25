@@ -26,7 +26,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "mistral:7b")
 EXEC_TIMEOUT = float(os.getenv("EXEC_TIMEOUT", "30"))
 
 # Nombre total de tentatives LLM (1 génération + (N-1) réparations sur erreur).
-MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "2"))
+MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "3"))
 
 
 def _build_schema(data_path: str, enum_max: int = 25) -> str:
@@ -189,11 +189,15 @@ def repair_code_with_llm(chat_request: str, broken_code: str, error: str) -> str
     Erreur :
     %(error)s
 
+    Colonnes disponibles dans le DataFrame (utilise EXACTEMENT ces noms) :
+    %(schema)s
+
     Corrige le code. Règles : pas d'import autre que pandas/numpy/json, commence par les imports,
     termine par print(json.dumps(...)). Charge les données avec pd.read_parquet('%(data_path)s').
     Ne retourne QUE le code corrigé dans un bloc ```python ... ```. [/INST]
     """ % {"question": chat_request, "code": broken_code,
-           "error": error.strip()[-800:], "data_path": DATA_PATH}
+           "error": error.strip()[-800:], "data_path": DATA_PATH,
+           "schema": SCHEMA_TEXT}
     print("Réparation demandée au modèle.")
     return _call_llm(prompt)
 
