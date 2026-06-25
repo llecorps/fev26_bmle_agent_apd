@@ -1,5 +1,14 @@
 
 services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - chat-network
+
   explore-api:
     build: ./api/explore
     ports:
@@ -8,6 +17,10 @@ services:
       - ./data:/data:ro
     environment:
       - DATA_PATH=/data/processed/apd_clean.parquet
+      - LLM_URL=http://ollama:11434/v1/chat/completions
+      - LLM_MODEL=mistral:7b
+    depends_on:
+      - ollama
     networks:
       - chat-network
 
@@ -33,6 +46,9 @@ services:
       - predict-api
     networks:
       - chat-network
+
+volumes:
+  ollama_data:
 
 networks:
   chat-network:

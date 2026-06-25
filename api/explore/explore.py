@@ -19,8 +19,8 @@ api = FastAPI(
 DATA_PATH = os.getenv("DATA_PATH", "/data/processed/apd_clean.parquet")
 
 # Endpoint du serveur LLM (vLLM/MLX), surchargeable hors Docker Desktop.
-LLM_URL = os.getenv("LLM_URL", "http://host.docker.internal:8000/v1/chat/completions")
-LLM_MODEL = os.getenv("LLM_MODEL", "mlx-community/Mistral-7B-Instruct-v0.3-4bit")
+LLM_URL = os.getenv("LLM_URL", "http://localhost:11434/v1/chat/completions")
+LLM_MODEL = os.getenv("LLM_MODEL", "mistral:7b")
 
 # Délai max d'exécution du code généré avant kill du subprocess (secondes).
 EXEC_TIMEOUT = float(os.getenv("EXEC_TIMEOUT", "30"))
