@@ -50,21 +50,23 @@ metrics:  ## Affiche les métriques du pipeline
 	$(DVC) metrics show
 
 # ---------------------------------------------------------------------------
-# Serveur LLM (vllm-mlx sur Apple Silicon) — process hôte, à lancer à part
+# Serveur LLM (Ollama — géré par Docker Compose)
 # ---------------------------------------------------------------------------
-.PHONY: llm
-llm:  ## Démarre le serveur LLM local (port 8000, lit llm/.env)
-	bash llm/start_vllm_mac.sh
+.PHONY: llm-pull
+llm-pull:  ## Télécharge le modèle mistral:7b dans le conteneur ollama
+	$(COMPOSE) exec ollama ollama pull mistral:7b
 
 # ---------------------------------------------------------------------------
 # Services Docker (api + ui)
 # ---------------------------------------------------------------------------
 .PHONY: up
-up: $(DATA)  ## Build + démarre l'API et l'UI (nécessite les données et le LLM)
+up: $(DATA)  ## Build + démarre tous les services (ollama + api + ui)
 	$(COMPOSE) up --build -d
+	@echo "Attente du démarrage d'Ollama..."
+	@sleep 5
+	@$(MAKE) llm-pull
 	@echo "UI    : http://localhost:$${UI_PORT:-8500}"
 	@echo "API   : http://localhost:$${API_PORT:-8081}/explore"
-	@echo "Rappel: le serveur LLM doit tourner ('make llm' dans un autre terminal)."
 
 .PHONY: down
 down:  ## Arrête et supprime les conteneurs
