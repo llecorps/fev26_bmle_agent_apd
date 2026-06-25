@@ -23,13 +23,37 @@ st.sidebar.caption("DataScientest — ML Engineer")
 # ═════════════════════════════════════════════════
 # PAGE : CHATBOT EXPLORATION
 # ═════════════════════════════════════════════════
+EXAMPLE_QUESTIONS = [
+    "Quels sont les 5 pays qui reçoivent le plus d'aide en montant versé ?",
+    "Combien de projets ont été déclarés en 2022 ?",
+    "Quelle est la répartition des projets par région ?",
+    "Compare les montants versés par l'AFD et Proparco depuis 2020",
+    "Quels secteurs concentrent le plus d'engagements en Afrique subsaharienne ?",
+    "Quels pays PMA ont reçu le plus de dons entre 2019 et 2023 ?",
+    "Liste les projets liés à l'ODD 6 (eau et assainissement) au Sénégal",
+    "Quel est le montant total engagé sur les projets climat ?",
+    "Quelle agence a le plus petit ticket moyen par projet ?",
+    "Quel est le taux de don moyen par type de financement ?",
+]
+
 if page == "Chatbot Exploration":
     st.title("💬 Chatbot Exploration")
 
-    if prompt := st.chat_input("Écrivez votre message ici..."):
+    with st.expander("💡 Exemples de questions", expanded=False):
+        cols = st.columns(2)
+        for i, q in enumerate(EXAMPLE_QUESTIONS):
+            if cols[i % 2].button(q, key=f"ex_{i}", use_container_width=True):
+                st.session_state["prefill"] = q
+                st.rerun()
+
+    prompt = st.session_state.pop("prefill", None)
+
+    if typed := st.chat_input("Écrivez votre message ici..."):
+        prompt = typed
+
+    if prompt:
         with st.chat_message("user"):
             st.markdown(prompt)
-
         with st.chat_message("assistant"):
             with st.spinner("Le chatbot réfléchit... "):
                 try:
