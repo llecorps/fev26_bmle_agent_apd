@@ -81,7 +81,7 @@ logs:  ## Suit les logs des conteneurs
 # ---------------------------------------------------------------------------
 .PHONY: test
 test:  ## Lance les tests (sandbox de l'API)
-	cd api && ../.venv/bin/python -m pytest test_sandbox.py -v
+	cd api/explore && ../../.venv/bin/python -m pytest test_sandbox.py -v
 
 .PHONY: clean
 clean:  ## Supprime les caches Python

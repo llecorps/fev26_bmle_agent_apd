@@ -123,6 +123,23 @@ Le code généré par le LLM est exécuté, donc encadré en profondeur :
 | `LLM_MODEL`    | `mistral:7b`                                        | Modèle servi                  |
 | `EXEC_TIMEOUT` | `30`                                                | Timeout d'exécution (s)       |
 
+## Commandes make
+
+```
+make install     Crée le venv et installe les dépendances du pipeline
+make data        Construit les données (dvc repro) si nécessaire
+make repro       Force le rejeu complet du pipeline DVC
+make pull        Récupère les données depuis le remote DagsHub
+make push        Envoie les données vers le remote DagsHub
+make metrics     Affiche les métriques du pipeline
+make llm-pull    Télécharge le modèle mistral:7b dans le conteneur ollama
+make up          Build + démarre tous les services (ollama + api + ui)
+make down        Arrête et supprime les conteneurs
+make logs        Suit les logs des conteneurs
+make test        Lance les tests (sandbox de l'API)
+make clean       Supprime les caches Python
+```
+
 ## Arborescence
 
 ```
