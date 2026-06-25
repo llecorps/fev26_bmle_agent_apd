@@ -59,8 +59,22 @@ if page == "Chatbot Exploration":
                 try:
                     response = requests.post(EXPLORE_API_URL, json={"message": prompt})
                     response.raise_for_status()
-                    bot_reply = response.json().get("result", "Erreur : Réponse vide.")
-                    st.markdown(bot_reply)
+                    data = response.json()
+                    bot_reply = data.get("result", "")
+                    error = data.get("error", "")
+                    returncode = data.get("returncode", -1)
+
+                    if bot_reply:
+                        st.markdown(bot_reply)
+                    else:
+                        st.warning("Aucun résultat retourné.")
+
+                    with st.expander("🔍 Logs d'exécution", expanded=(returncode != 0)):
+                        st.caption(f"returncode : `{returncode}`")
+                        if error:
+                            st.code(error, language="bash")
+                        else:
+                            st.success("Exécution sans erreur.")
                 except requests.exceptions.RequestException as e:
                     st.error(f"Erreur de connexion à l'API : {e}")
 
