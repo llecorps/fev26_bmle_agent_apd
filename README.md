@@ -63,6 +63,85 @@ git remote add dagshub https://dagshub.com/<user>/<repo>.git
 git push dagshub <branche>
 ```
 
+## Chatbot analytique (api + ui + llm)
+
+Au-dessus des données préparées, un chatbot répond à des questions en langage
+naturel : un LLM génère du code pandas, l'API le valide puis l'exécute, et
+renvoie le résultat à l'UI.
+
+```
+Streamlit (ui)  ──HTTP──►  FastAPI (api)  ──HTTP──►  serveur LLM
+   :8500                      :8080 (interne)          :8000 (hôte)
+                                │
+                                ▼
+                  1. génère le code pandas (LLM)
+                  2. validation AST (api/sandbox.py)
+                  3. exécution sandboxée (python -I, timeout)
+                  4. lit data/processed/apd_clean.parquet (monté :ro)
+```
+
+### ⚠️ Pourquoi le LLM n'est PAS dans docker compose
+
+Le serveur LLM (`vllm-mlx`) utilise le **GPU Metal/MPS** d'Apple Silicon
+(`VLLM_TARGET_DEVICE=mps`). Or sur macOS, les conteneurs Docker tournent dans
+une VM Linux **sans accès au GPU Metal**. `vllm-mlx` ne peut donc pas être
+containerisé sur Mac.
+
+Conséquence : le LLM tourne en **process hôte** (lancé via
+`llm/start_vllm_mac.sh`), et l'API conteneurisée le joint via
+`host.docker.internal:8000`. Seuls `api` et `ui` sont gérés par docker compose.
+
+> Pour un déploiement Linux + GPU NVIDIA, le LLM pourrait être ajouté comme
+> service compose (vLLM CUDA). Sur Mac, le garder côté hôte est la seule option
+> qui exploite le GPU.
+
+### Démarrer le chatbot
+
+```bash
+# 1. (une fois) renseigner le token Hugging Face — optionnel pour un modèle public
+cp llm/.env.example llm/.env        # puis éditer HF_TOKEN si nécessaire
+
+# 2. construire les données si besoin
+make data            # ou make pull
+
+# 3. terminal A — serveur LLM (process hôte, GPU Metal)
+make llm
+
+# 4. terminal B — API + UI dockerisés
+make up
+```
+
+- UI : http://localhost:8500
+- API : http://localhost:8081/explore (port hôte ; interne 8080)
+
+Le port hôte de l'API est **8081** par défaut pour éviter la collision avec
+d'autres services sur 8080. Surchargeable : `API_PORT=9000 make up`
+(idem `UI_PORT`). Le port interne reste 8080, donc l'UI joint l'API sans
+changement via le réseau Docker.
+
+Arrêt : `make down`. Logs : `make logs`.
+
+### Sécurité d'exécution
+
+Le code généré par le LLM est exécuté, donc encadré en profondeur :
+
+1. **Validation AST** ([api/sandbox.py](api/sandbox.py)) avant toute exécution :
+   imports limités à une whitelist (pandas, numpy, json…), blocage de
+   `eval`/`exec`/`open`, des dunders et des méthodes d'écriture fichier
+   (`to_csv`, `to_pickle`…). Testé : `make test` (18 cas).
+2. **subprocess isolé** : `python -I`, avec un **timeout** (`EXEC_TIMEOUT`, 30 s).
+3. **Volume données en lecture seule** (`./data:/data:ro`) : pas d'écriture ni
+   d'exfiltration possible vers les données.
+
+### Variables d'environnement (api)
+
+| Variable       | Défaut                                          | Rôle                          |
+| -------------- | ----------------------------------------------- | ----------------------------- |
+| `DATA_PATH`    | `/data/processed/apd_clean.parquet`             | Fichier lu par le code généré |
+| `LLM_URL`      | `http://host.docker.internal:8000/v1/chat/...`  | Endpoint du serveur LLM       |
+| `LLM_MODEL`    | `mlx-community/Mistral-7B-Instruct-v0.3-4bit`   | Modèle servi                  |
+| `EXEC_TIMEOUT` | `30`                                            | Timeout d'exécution (s)       |
+
 ## Arborescence
 
 ```
@@ -76,6 +155,14 @@ models/
 src/
   prepare.py  # stage prepare
   features.py # stage features
+api/          # FastAPI : génération + validation + exécution du code pandas
+  explore.py  #   endpoint /explore
+  sandbox.py  #   validation AST du code généré
+  test_sandbox.py
+ui/           # Streamlit : interface de chat (app.py)
+llm/          # serveur LLM hôte (start_vllm_mac.sh, .env.example)
+docker-compose.yml  # services api + ui
+Makefile      # orchestration (make help)
 dvc.yaml      # définition des stages
 params.yaml   # hyperparamètres
 dvc.lock      # hashes des inputs/outputs (versionné git, géré par DVC)

@@ -1,0 +1,39 @@
+
+services:
+  explore-api:
+    build: ./api/explore
+    ports:
+      - "${API_PORT:-8081}:8080"
+    volumes:
+      - ./data:/data:ro
+    environment:
+      - DATA_PATH=/data/processed/apd_clean.parquet
+    networks:
+      - chat-network
+
+  predict-api:
+    build: ./api/predict
+    ports:
+      - "${PREDICT_PORT:-8082}:8080"
+    environment:
+      - MODEL_PATH=/models/data/pipline.joblib
+    volumes:
+      - ./models/data:/app/model:ro
+    networks:
+      - chat-network
+
+  ui:
+    build: ./ui
+    ports:
+      - "${UI_PORT:-8500}:8500"
+    environment:
+      - API_URL=http://explore-api:8080/explore
+    depends_on:
+      - explore-api
+      - predict-api
+    networks:
+      - chat-network
+
+networks:
+  chat-network:
+    driver: bridge
