@@ -5,6 +5,7 @@ import tempfile
 import subprocess
 import sys
 import os
+import mlflow
 
 from sandbox import validate_code, CodeValidationError
 
@@ -13,6 +14,12 @@ api = FastAPI(
     title="REST API",
     description="API powered by FastAPI.",
     version="0.0.1")
+
+# ─── CONFIGURATION MLFLOW ───────────────────────────────────
+MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+mlflow.set_tracking_uri(MLFLOW_URI)
+mlflow.set_experiment("explore-llm-chat")
+# ────────────────────────────────────────────────────────────
 
 # Fichier de données exposé au code généré. Par défaut la sortie du pipeline DVC
 # (data/processed/apd_clean.parquet) montée dans le conteneur sous /data.
@@ -92,13 +99,19 @@ def run_sandboxed(code: str):
 
     return r.returncode, r.stdout, r.stderr
 
-
+@mlflow.trace(name="explore-llm-session", span_type="CHAIN")
 @api.post('/explore')
-def post_explore(request: ChatRequest):
+async def post_explore(request: ChatRequest):
+
     """Returns explored data.
     """
 
     print(f"Requête reçue : {request.message}")
+
+    # Enregistrer l'input de l'utilisateur dans la trace actuelle
+    span = mlflow.get_current_active_span()
+    if span:
+        span.set_inputs({"user_query": request.message})
 
     code = generate_code_with_llm(request.message)
     returncode, stdout, stderr = -1, "", ""
@@ -115,8 +128,13 @@ def post_explore(request: ChatRequest):
         if attempt < MAX_ATTEMPTS:
             code = repair_code_with_llm(request.message, code, stderr)
 
+    # Enregistrer le résultat ou l'erreur à la racine de la trace
+    if span:
+        span.set_outputs({"result": stdout, "error": stderr, "success": returncode == 0})
+
     return {'result': stdout, 'error': stderr, 'returncode': returncode}
 
+@mlflow.trace(name="vllm-generation", span_type="LLM")
 def _call_llm(prompt: str) -> str:
     """Appelle le serveur LLM (API OpenAI-compatible) et renvoie le code extrait."""
     r = requests.post(LLM_URL,
@@ -127,6 +145,26 @@ def _call_llm(prompt: str) -> str:
         "messages": [{"role": "user", "content": prompt}],
     }, timeout=120)
     response_dict = r.json()
+
+    # ─── EXTRACTION DES MÉTRIQUES DE TOKENS LLM ───
+    try:
+        span = mlflow.get_current_active_span()
+        if span:
+            # On log le prompt exact envoyé et le modèle utilisé
+            span.set_inputs({"prompt": prompt, "model": LLM_MODEL})
+            
+            # vLLM renvoie une structure standardisée "usage"
+            usage = response_dict.get("usage", {})
+            span.set_attributes({
+                "llm.model": LLM_MODEL,
+                "llm.usage.prompt_tokens": usage.get("prompt_tokens", 0),
+                "llm.usage.completion_tokens": usage.get("completion_tokens", 0),
+                "llm.usage.total_tokens": usage.get("total_tokens", 0)
+            })
+    except Exception as e:
+        print(f"⚠️ Impossible de rattacher les métriques à la trace MLflow : {e}")
+    # ───────────────────────────────────────────────
+
     generated_code = extract_pure_code(response_dict['choices'][0]['message']['content'])
     print(generated_code)
     return generated_code

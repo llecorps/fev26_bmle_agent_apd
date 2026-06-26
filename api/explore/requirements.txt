@@ -4,3 +4,4 @@ requests==2.32.3
 pandas==2.2.3
 numpy==2.2.1
 pyarrow==18.1.0
+mlflow>=3.0.0
