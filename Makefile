@@ -77,6 +77,27 @@ logs:  ## Suit les logs des conteneurs
 	$(COMPOSE) logs -f
 
 # ---------------------------------------------------------------------------
+# Airflow + Dashboard
+# ---------------------------------------------------------------------------
+.PHONY: airflow-init
+airflow-init:  ## Initialise Airflow (DB + user admin/admin)
+	docker compose -f docker-compose-airflow.yml up airflow-init
+
+.PHONY: airflow-up
+airflow-up:  ## Démarre Airflow + dashboard (port 8080 + 8050)
+	docker compose -f docker-compose-airflow.yml up --build -d
+	@echo "Airflow  : http://localhost:8080  (admin/admin)"
+	@echo "Dashboard: http://localhost:8050"
+
+.PHONY: airflow-down
+airflow-down:  ## Arrête Airflow + dashboard
+	docker compose -f docker-compose-airflow.yml down
+
+.PHONY: airflow-logs
+airflow-logs:  ## Suit les logs Airflow
+	docker compose -f docker-compose-airflow.yml logs -f
+
+# ---------------------------------------------------------------------------
 # Qualité
 # ---------------------------------------------------------------------------
 .PHONY: test

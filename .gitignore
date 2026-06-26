@@ -13,6 +13,11 @@ __pycache__/
 # Override docker compose local (machine-spécifique : endpoint LLM, ports...).
 docker-compose.override.yml
 
+# Données et logs générés par Airflow (non versionnés)
+raw_files/
+clean_data/
+logs/
+
 # Les artefacts versionnés par DVC sont ignorés via des .gitignore locaux
 # générés par DVC (ex. data/processed/.gitignore). Ne pas ignorer ici les
 # dossiers entiers : les fichiers .dvc et .gitignore locaux DOIVENT être commités.
