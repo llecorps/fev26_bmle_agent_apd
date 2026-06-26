@@ -57,16 +57,18 @@ llm-pull:  ## Télécharge le modèle mistral:7b dans le conteneur ollama
 	$(COMPOSE) exec ollama ollama pull mistral:7b
 
 # ---------------------------------------------------------------------------
-# Services Docker (api + ui)
+# Services Docker (chatbot + airflow + dashboard, un seul compose)
 # ---------------------------------------------------------------------------
 .PHONY: up
-up: $(DATA)  ## Build + démarre tous les services (ollama + api + ui)
+up: $(DATA)  ## Build + démarre tous les services (chatbot + airflow + dashboard)
 	$(COMPOSE) up --build -d
 	@echo "Attente du démarrage d'Ollama..."
 	@sleep 5
 	@$(MAKE) llm-pull
-	@echo "UI    : http://localhost:$${UI_PORT:-8500}"
-	@echo "API   : http://localhost:$${API_PORT:-8081}/explore"
+	@echo "UI        : http://localhost:$${UI_PORT:-8500}"
+	@echo "API       : http://localhost:$${API_PORT:-8081}/explore"
+	@echo "Airflow   : http://localhost:8080  (admin/admin)"
+	@echo "Dashboard : http://localhost:8050"
 
 .PHONY: down
 down:  ## Arrête et supprime les conteneurs
@@ -75,27 +77,6 @@ down:  ## Arrête et supprime les conteneurs
 .PHONY: logs
 logs:  ## Suit les logs des conteneurs
 	$(COMPOSE) logs -f
-
-# ---------------------------------------------------------------------------
-# Airflow + Dashboard
-# ---------------------------------------------------------------------------
-.PHONY: airflow-init
-airflow-init:  ## Initialise Airflow (DB + user admin/admin)
-	docker compose -f docker-compose-airflow.yml up airflow-init
-
-.PHONY: airflow-up
-airflow-up:  ## Démarre Airflow + dashboard (port 8080 + 8050)
-	docker compose -f docker-compose-airflow.yml up --build -d
-	@echo "Airflow  : http://localhost:8080  (admin/admin)"
-	@echo "Dashboard: http://localhost:8050"
-
-.PHONY: airflow-down
-airflow-down:  ## Arrête Airflow + dashboard
-	docker compose -f docker-compose-airflow.yml down
-
-.PHONY: airflow-logs
-airflow-logs:  ## Suit les logs Airflow
-	docker compose -f docker-compose-airflow.yml logs -f
 
 # ---------------------------------------------------------------------------
 # Qualité
