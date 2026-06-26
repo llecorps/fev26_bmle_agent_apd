@@ -9,6 +9,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
     DAGSHUB_ACCESS_KEY: ${DAGSHUB_ACCESS_KEY:-}
     DAGSHUB_SECRET_KEY: ${DAGSHUB_SECRET_KEY:-}
+    _PIP_ADDITIONAL_REQUIREMENTS: boto3 pyarrow
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
@@ -16,6 +17,7 @@ x-airflow-common: &airflow-common
     - ./raw_files:/app/raw_files
     - ./clean_data:/app/clean_data
     - ./models/data:/app/models/data
+    - ./data:/app/data
   networks:
     - chat-network
   depends_on:
