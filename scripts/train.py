@@ -120,6 +120,29 @@ def train(data_path: str, n_estimators: int, max_depth: int | None, min_samples_
         print(f"Run : {run_name}")
         print(f"{'='*60}")
 
+        # =========================================================
+        # MLFLOW : Logging du dataset complet (X_train + y_train) 
+        # pour la reproductibilité
+        # =========================================================
+        # recombiner X_train et y_train pour créer le dataset complet
+        df_train = X_train.copy()
+        df_train["log_engagements"] = y_train
+        
+        # récupèrer le nom du fichier pour nommer le dataset
+        dataset_name = os.path.basename(data_path)
+        
+        # créer l'objet Dataset MLflow
+        mlflow_dataset = mlflow.data.from_pandas(
+            df_train,
+            targets="log_engagements",
+            name=dataset_name
+        )
+        
+        # Enregistrer dans le Run actif avec le contexte "training"
+        mlflow.log_input(mlflow_dataset, context="training")
+        # =========================================================
+
+
         # Log params
         mlflow.log_params({
             "n_estimators": n_estimators,
@@ -197,7 +220,7 @@ def train(data_path: str, n_estimators: int, max_depth: int | None, min_samples_
         # Log sklearn model -> registry
         mv = mlflow.sklearn.log_model(
             pipeline,
-            artifact_path="model",
+            name="model",
             registered_model_name=MODEL_NAME,
             serialization_format="cloudpickle",
             #skops_trusted_types=["numpy.dtype"] # <-- skops doit truster afin d'éviter les erreurs de compatibilité avec les type Numpy
