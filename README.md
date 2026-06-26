@@ -93,9 +93,19 @@ make data            # ou : make pull
 make up
 ```
 
-- UI : http://localhost:8500
-- API explore : http://localhost:8081/explore
-- API predict : http://localhost:8082/predict
+### Services & URLs
+
+Un seul `make up` démarre l'ensemble de la stack (chatbot + Airflow + dashboard) :
+
+| Service            | URL                                  | Détails                          |
+| ------------------ | ------------------------------------ | -------------------------------- |
+| UI Streamlit       | http://localhost:8500                | Chatbot d'exploration + prédiction |
+| API explore        | http://localhost:8081/explore        | Génération + exécution code pandas |
+| API predict        | http://localhost:8082/predict        | Prédiction du montant (modèle ML)  |
+| API predict (docs) | http://localhost:8082/docs           | Swagger UI FastAPI               |
+| Ollama             | http://localhost:11434               | LLM local (mistral:7b)           |
+| Airflow            | http://localhost:8080                | Orchestration DAG (`admin`/`admin`) |
+| Dashboard Dash     | http://localhost:8050                | Visualisation des données APD    |
 
 Le port hôte de l'API est **8081** par défaut. Surchargeable : `API_PORT=9000 make up`
 (idem `UI_PORT`, `PREDICT_PORT`).
