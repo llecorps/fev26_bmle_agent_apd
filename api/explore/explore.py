@@ -6,6 +6,7 @@ import subprocess
 import sys
 import os
 import mlflow
+import json
 
 from sandbox import validate_code, CodeValidationError
 
@@ -25,7 +26,7 @@ mlflow.set_experiment("explore-llm-chat")
 # (data/processed/apd_clean.parquet) montée dans le conteneur sous /data.
 DATA_PATH = os.getenv("DATA_PATH", "/data/processed/apd_clean.parquet")
 
-# Endpoint du serveur LLM (vLLM/MLX), surchargeable hors Docker Desktop.
+# Endpoint du serveur LLM (vLLM/MLX)
 LLM_URL = os.getenv("LLM_URL", "http://host.docker.internal:8000/v1/chat/completions")
 LLM_MODEL = os.getenv("LLM_MODEL", "mlx-community/Mistral-7B-Instruct-v0.3-4bit")
 
@@ -113,7 +114,7 @@ async def post_explore(request: ChatRequest):
     if span:
         span.set_inputs({"user_query": request.message})
 
-    code = generate_code_with_llm(request.message)
+    code = generate_code_with_llm(request.message, span)
     returncode, stdout, stderr = -1, "", ""
 
     # Boucle d'auto-réparation : si l'exécution échoue, on renvoie l'erreur au
@@ -126,7 +127,7 @@ async def post_explore(request: ChatRequest):
             break
         print(f"Échec (returncode={returncode}) : {stderr.strip()[-300:]}")
         if attempt < MAX_ATTEMPTS:
-            code = repair_code_with_llm(request.message, code, stderr)
+            code = repair_code_with_llm(request.message, code, stderr, span)
 
     # Enregistrer le résultat ou l'erreur à la racine de la trace
     if span:
@@ -170,68 +171,77 @@ def _call_llm(prompt: str) -> str:
     return generated_code
 
 
-def generate_code_with_llm(chat_request: str) -> str:
-    prompt = """[INST] Tu es un expert en analyse de données Python et Pandas. Ton unique tâche est de générer du code Python propre, optimisé et prêt à être exécuté dans un notebook Jupyter.
-    CRITÈRES STRICTS :
-    1. Ne retourne QUE le code Python à l'intérieur d'un seul bloc de code Markdown (```python ... ```).
-    2. Ne saisis AUCUN texte d'introduction, AUCUNE explication, ni AUCUN commentaire après le code.
-    3. Si tu as besoin d'expliquer quelque chose, fais-le uniquement sous forme de commentaires DICTÉS À L'INTÉRIEUR du code Python (ex: # Étape 1 : ...).
+def generate_code_with_llm(chat_request: str, root_span=None) -> str:
+    prompt_name = "explore-code-generation-prompt"
+    
+    try:
+        # Charger la version 'champion' depuis le Prompt Registry de MLflow
+        mlflow_prompt = mlflow.genai.load_prompt(f"prompts:/{prompt_name}@champion")
+        template_str = mlflow_prompt.template
 
-    Charger le fichier de données avec : df = pd.read_parquet('%(data_path)s')
-    Le fichier contient des données nettoyées sur l'aide publique au développement française. Chaque ligne représente une déclaration de projet.
+        # Assigner le prompt à la trace active
+        # Cela garantit que la trace apparaîtra dans l'onglet "Traces"
+        mlflow.update_current_trace(
+            tags={
+                "mlflow.linkedPrompts": json.dumps([
+                    {
+                        "name": mlflow_prompt.name, 
+                        "version": str(mlflow_prompt.version)
+                    }
+                ])
+            }
+        )
+   
+    except Exception as e:
+        print(f"⚠️ Impossible de charger le prompt depuis MLflow ({e}).")
+        raise e
 
-    Colonnes du DataFrame (utilise EXACTEMENT ces noms, accents compris) :
-    %(schema)s
-
-    Toujours utiliser Pandas pour effectuer des opérations sur les données, telles que le filtrage, l'agrégation et le regroupement.
-    Commence TOUJOURS par les imports nécessaires : `import pandas as pd` et `import json`.
-    Termine TOUJOURS par print(json.dumps(...)) pour imprimer le résultat final en JSON.
-
-    N'importe AUCUN module autre que pandas, numpy et json.
-
-    EXEMPLE pour « Montant moyen de X par catégorie Y » :
-    ```python
-    import pandas as pd
-    import json
-    df = pd.read_parquet('%(data_path)s')
-    resultat = df.groupby('Y')['X'].mean()
-    print(json.dumps(resultat.to_dict(), ensure_ascii=False))
-    ```
-    Adapte les noms de colonnes à la question. Pour un classement, utilise
-    .sort_values(ascending=False).head(n). Pour un comptage, .value_counts().
-
-    Format de réponse attendu :
-    ```python
-    # Ton code ici
-    ``` [/INST]
-
-    voici la requête de l'utilisateur :
-    """ % {"data_path": DATA_PATH, "schema": SCHEMA_TEXT}
-    prompt += chat_request
+    # Remplacement des variables du template MLflow
+    prompt = (
+        template_str.replace("{{data_path}}", DATA_PATH)
+        .replace("{{schema}}", SCHEMA_TEXT)
+        .replace("{{question}}", chat_request)
+    )
 
     print("Prompt envoyé au modèle :", prompt[:500], "...")
     return _call_llm(prompt)
 
 
-def repair_code_with_llm(chat_request: str, broken_code: str, error: str) -> str:
+def repair_code_with_llm(chat_request: str, broken_code: str, error: str, root_span=None) -> str:
     """Renvoie au LLM le code fautif et son erreur d'exécution pour correction."""
-    prompt = """[INST] Le code Python suivant, censé répondre à la question d'un utilisateur, a échoué à l'exécution.
+    prompt_name = "explore-code-repair-prompt"
 
-    Question : %(question)s
+    try:
+        # Charger la version 'champion' depuis le Prompt Registry de MLflow
+        mlflow_prompt = mlflow.genai.load_prompt(f"prompts:/{prompt_name}@champion")
+        template_str = mlflow_prompt.template
 
-    Code fautif :
-    ```python
-    %(code)s
-    ```
+        # Assigner le prompt à la trace active
+        # Cela garantit que la trace apparaîtra dans l'onglet "Traces"
+        mlflow.update_current_trace(
+            tags={
+                "mlflow.linkedPrompts": json.dumps([
+                    {
+                        "name": mlflow_prompt.name, 
+                        "version": str(mlflow_prompt.version)
+                    }
+                ])
+            }
+        )
 
-    Erreur :
-    %(error)s
+    except Exception as e:
+        print(f"⚠️ Impossible de charger le prompt depuis MLflow ({e}).")
+        raise e
 
-    Corrige le code. Règles : pas d'import autre que pandas/numpy/json, commence par les imports,
-    termine par print(json.dumps(...)). Charge les données avec pd.read_parquet('%(data_path)s').
-    Ne retourne QUE le code corrigé dans un bloc ```python ... ```. [/INST]
-    """ % {"question": chat_request, "code": broken_code,
-           "error": error.strip()[-800:], "data_path": DATA_PATH}
+    # Remplacement des variables du template MLflow
+    prompt = (
+        template_str.replace("{{data_path}}", DATA_PATH)
+        .replace("{{schema}}", SCHEMA_TEXT)
+        .replace("{{question}}", chat_request)
+        .replace("{{broken_code}}", broken_code)
+        .replace("{{error}}", error)
+    )
+
     print("Réparation demandée au modèle.")
     return _call_llm(prompt)
 

@@ -1,4 +1,4 @@
-FROM ghcr.io/mlflow/mlflow:v3.13.0
+FROM ghcr.io/mlflow/mlflow:v3.14.0
 
 # Installation des dépendances système nécessaires au healthcheck et à psycopg2
 RUN apt-get update && apt-get install -y \
