@@ -7,7 +7,7 @@ services:
       - ./data:/data:ro
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - DATA_PATH=/data/processed/apd_clean.parquet
+      - DATA_PATH=/data/processed/apd_explore.parquet
     networks:
       - chat-network
 

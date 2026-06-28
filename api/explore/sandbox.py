@@ -78,3 +78,71 @@ def validate_code(code: str) -> None:
                 raise CodeValidationError(f"Attribut interdit : .{node.attr}")
             if node.attr.startswith("__"):
                 raise CodeValidationError(f"Attribut dunder interdit : .{node.attr}")
+
+
+def _is_str_const(node) -> bool:
+    return isinstance(node, ast.Constant) and isinstance(node.value, str)
+
+
+def _is_str_or_list_of_str(node) -> bool:
+    """True si node est une chaîne constante ou une liste/tuple de chaînes."""
+    if _is_str_const(node):
+        return True
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return bool(node.elts) and all(_is_str_const(e) for e in node.elts)
+    return False
+
+
+def sanitize_code(code: str) -> str:
+    """Normalise le code généré avant exécution (transformations sûres, AST).
+
+    1) Neutralise les `assert` défensifs (-> `pass`) : un `assert "col" in
+       df.columns` ne fait plus échouer le code.
+    2) Corrige l'ordre d'un groupby inversé : BASE["valeur"].groupby("col")
+       -> BASE.groupby("col")["valeur"]. Sélectionner la colonne de valeurs avant
+       le groupby ne laisse qu'une Series et provoque un KeyError ; on remet la
+       sélection APRÈS le groupby. Restreint au cas non ambigu (clé sélectionnée
+       et clé de groupby = chaînes constantes), pour ne jamais casser un
+       Series.groupby(clé_externe) légitime.
+
+    Si le code n'est pas parsable, on le renvoie tel quel : validate_code lèvera
+    alors une erreur de syntaxe propre (qui déclenchera la réparation).
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return code
+
+    class _StripAsserts(ast.NodeTransformer):
+        def visit_Assert(self, node):  # noqa: N802
+            return ast.copy_location(ast.Pass(), node)
+
+    class _FixGroupbyOrder(ast.NodeTransformer):
+        def visit_Call(self, node):  # noqa: N802
+            self.generic_visit(node)
+            f = node.func
+            # match: <BASE>[<str>].groupby(<str | [str, ...]>)
+            if (isinstance(f, ast.Attribute) and f.attr == "groupby"
+                    and isinstance(f.value, ast.Subscript)
+                    and _is_str_const(f.value.slice)
+                    and node.args and _is_str_or_list_of_str(node.args[0])):
+                base = f.value.value          # le DataFrame (éventuellement filtré)
+                value_key = f.value.slice     # la colonne de valeurs sélectionnée
+                new_groupby = ast.Call(
+                    func=ast.Attribute(value=base, attr="groupby", ctx=ast.Load()),
+                    args=node.args, keywords=node.keywords)
+                new_node = ast.Subscript(value=new_groupby, slice=value_key,
+                                         ctx=ast.Load())
+                return ast.copy_location(new_node, node)
+            return node
+
+    tree = _StripAsserts().visit(tree)
+    try:
+        tree = _FixGroupbyOrder().visit(tree)
+    except Exception:
+        pass
+    ast.fix_missing_locations(tree)
+    try:
+        return ast.unparse(tree)
+    except Exception:
+        return code
