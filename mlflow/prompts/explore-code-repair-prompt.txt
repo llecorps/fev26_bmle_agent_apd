@@ -1,0 +1,52 @@
+[INST] Le code Python suivant, censé répondre à la question d'un utilisateur, a échoué à l'exécution.
+
+Question : {{question}}
+
+Code fautif :
+```python
+{{broken_code}}
+```
+
+Erreur d'exécution :
+{{error}}
+
+Colonnes valides du DataFrame (utilise EXACTEMENT ces noms, accents compris) :
+{{schema}}
+
+Corrige le code. RÈGLES :
+- Si KeyError sur une colonne qui apparaît pourtant dans un filtre (ex.
+  "annee_engagement"), c'est que la colonne de valeurs a été sélectionnée AVANT
+  le groupby. Remets le groupby sur le DataFrame puis la sélection :
+  df.groupby("colonne")["valeur"].sum() (et non df["valeur"].groupby("colonne")).
+- Analyse temporelle : la VRAIE date est "date_engagement" (datetime) ;
+  "annee_engagement"/"mois_engagement" sont des entiers. Si l'erreur mentionne
+  « Only valid with DatetimeIndex », c'est un appel à .resample() (souvent sur un
+  groupby déjà agrégé) : SUPPRIME le resample. Pour l'annuel, groupby(
+  "annee_engagement").sum().sort_index() suffit. Pour le mensuel/trimestriel,
+  groupe sur df["date_engagement"].dt.to_period("M") (ou "Q"). N'utilise jamais
+  resample.
+- Si l'erreur est « unterminated string literal » ou une SyntaxError, c'est
+  souvent une colonne à apostrophe entre guillemets simples. Mets TOUS les noms
+  de colonnes entre guillemets DOUBLES : df["Nature de l'activite"].
+- Supprime toute instruction `assert`, tout `try`/`except` et tout code de
+  vérification du schéma (n'utilise pas `set(df.columns)`) : calcule directement
+  le résultat et imprime le JSON.
+- Si l'erreur est un KeyError sur un nom de colonne, c'est que la colonne
+  N'EXISTE PAS : remplace-la par la colonne valide la plus proche de la liste
+  ci-dessus (n'invente jamais de colonne). Si aucune colonne ne convient pour la
+  dimension demandée (ex. une année absente), renvoie un "type": "scalar".
+- Aucun import autre que pandas, numpy et json. Commence par les imports.
+- Charge les données avec : df = pd.read_parquet('{{data_path}}').
+- N'écris AUCUN fichier (pas de to_csv, to_parquet, etc.).
+- Termine TOUJOURS par UN SEUL print(json.dumps(payload, ensure_ascii=False)) où
+  `payload` respecte le contrat de sortie : une clé "type" parmi
+  "bar" | "line" | "pie" | "scalar" | "table", plus selon le type :
+    bar/line/pie -> "title", "labels" (liste de str), "values" (liste de nombres),
+                    "x_label", "y_label", "unit"
+    scalar       -> "title", "value" (nombre), "unit"
+    table        -> "title", "columns" (liste), "rows" (liste de listes)
+- Vérifie que les noms de colonnes existent EXACTEMENT (accents compris).
+- Pour bar/pie, limite à 15 éléments via .sort_values(ascending=False).head(15)
+  et arrondis : [round(float(v), 2) for v in serie.values].
+
+Ne retourne QUE le code corrigé dans un seul bloc ```python ... ```. [/INST]

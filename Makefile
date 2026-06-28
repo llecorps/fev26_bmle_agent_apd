@@ -7,6 +7,10 @@ DVC     := .venv/bin/dvc
 DATA    := data/processed/apd_clean.parquet
 COMPOSE := docker compose
 
+# URI du serveur MLflow (port hôte mappé dans docker-compose). Surchargeable :
+#   make init-prompts MLFLOW_URI=http://autre-hote:5050
+MLFLOW_URI ?= http://localhost:5050
+
 .DEFAULT_GOAL := help
 
 # ---------------------------------------------------------------------------
@@ -73,6 +77,15 @@ down:  ## Arrête et supprime les conteneurs
 .PHONY: logs
 logs:  ## Suit les logs des conteneurs
 	$(COMPOSE) logs -f
+
+# ---------------------------------------------------------------------------
+# Prompts (MLflow Prompt Registry)
+# ---------------------------------------------------------------------------
+.PHONY: init-prompts
+init-prompts:  ## Enregistre les prompts (génération de code + réparation de code) et bascule l'alias @champion
+	@echo "Enregistrement des prompts dans MLflow ($(MLFLOW_URI))…"
+	@echo "Rappel : la stack doit tourner ('make up') pour que MLflow réponde."
+	MLFLOW_TRACKING_URI=$(MLFLOW_URI) $(PYTHON) mlflow/register_prompts.py
 
 # ---------------------------------------------------------------------------
 # Qualité
