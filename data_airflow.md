@@ -98,6 +98,56 @@ pertinentes pour la modélisation.
 - Le score R² moyen est poussé dans **XCom**
   (`xcom_push(key="score_<ModelName>")`).
 
+#### Focus — transmission des scores via XCom
+
+Chaque tâche d'entraînement tourne dans un **processus isolé** : elles ne
+partagent ni variables Python ni mémoire. Pour que `select_and_save` puisse
+comparer les trois modèles, il faut un canal de communication entre tâches —
+c'est le rôle d'**XCom** (*cross-communication*).
+
+**Qu'est-ce qu'XCom ?** Un mécanisme natif d'Airflow permettant à une tâche de
+publier une petite valeur (chiffre, chaîne, dict…) que d'autres tâches du même
+*DAG run* pourront relire. Techniquement, la valeur est **sérialisée et stockée
+dans la base de métadonnées d'Airflow** (ici PostgreSQL), indexée par
+`(dag_id, run_id, task_id, key)`. XCom est conçu pour de **petites** données
+(scores, chemins, identifiants) — pas pour transporter un DataFrame ou un modèle.
+
+**Côté producteur** — chaque tâche d'entraînement publie son score R² :
+
+```python
+def _train_model(model_name, **context):
+    ...
+    score = float(np.mean(cross_val_score(pipe, X, y, cv=5, scoring="r2")))
+    context["ti"].xcom_push(key=f"score_{model_name}", value=score)
+```
+
+- `context["ti"]` est l'instance de tâche (*TaskInstance*) injectée par Airflow
+  (grâce à `provide_context=True`).
+- `xcom_push` écrit la paire `(key, value)` dans la base. Chaque modèle utilise
+  une clé distincte : `score_LinearRegression`, `score_DecisionTreeRegressor`,
+  `score_RandomForestRegressor`.
+
+**Côté consommateur** — `select_and_save` relit les trois scores :
+
+```python
+ti = context["ti"]
+scores = {
+    "LinearRegression":      ti.xcom_pull(key="score_LinearRegression"),
+    "DecisionTreeRegressor": ti.xcom_pull(key="score_DecisionTreeRegressor"),
+    "RandomForestRegressor": ti.xcom_pull(key="score_RandomForestRegressor"),
+}
+best_name = max(scores, key=scores.get)   # meilleur R² CV
+```
+
+- `xcom_pull(key=...)` lit la valeur publiée plus tôt dans le **même run**.
+- Grâce aux dépendances du DAG (`[t4a, t4b, t4c] >> t5`), Airflow garantit que
+  les trois `xcom_push` ont eu lieu **avant** que `select_and_save` ne s'exécute.
+
+**Pourquoi ce design ?** Il découple l'entraînement de la sélection : on peut
+ajouter/retirer un modèle sans toucher à `select_and_save` (il suffit d'ajouter
+une clé), et chaque entraînement reste parallélisable et ré-essayable
+indépendamment.
+
 ### 5. `select_and_save`
 
 **Fonctionnel** — sélectionne le modèle le plus performant, le réentraîne sur la
