@@ -15,15 +15,23 @@ concurrents et promeut le meilleur. Le modèle sauvegardé alimente l'API
 ## Vue d'ensemble
 
 ```
+Branche ML :
 download_data → clean_data → feature_engineering ─┬─→ train_linear  ─┐
                                                   ├─→ train_tree    ─┼─→ select_and_save
                                                   └─→ train_forest  ─┘
+
+Branche données (alimente l'API explore) :
+export_explore_parquet
 ```
 
-Les trois tâches d'entraînement s'exécutent **en parallèle** et transmettent
-leur score de validation croisée via **XCom**. `select_and_save` lit ces scores,
-choisit le meilleur modèle, le réentraîne sur l'ensemble des données et le
-sérialise.
+Le DAG comporte **deux branches indépendantes** :
+
+- **Branche ML** — les trois tâches d'entraînement s'exécutent **en parallèle**
+  et transmettent leur score de validation croisée via **XCom**.
+  `select_and_save` lit ces scores, choisit le meilleur modèle, le réentraîne
+  sur l'ensemble des données et le sérialise.
+- **Branche données** — `export_explore_parquet` produit le parquet consommé par
+  l'**API explore** (chatbot). Elle ne dépend pas de la branche ML.
 
 ---
 
@@ -105,12 +113,34 @@ totalité des données et le sauvegarde pour la production.
   - `/app/models/data/meta.json` — modèle choisi, scores CV, métriques test,
     liste des features, tailles train/test.
 
+### `export_explore_parquet` (branche données)
+
+**Fonctionnel** — alimente l'**API explore** (chatbot) avec des données à jour.
+Le chatbot lit ce parquet à chaque requête pour exécuter le code pandas généré.
+
+**Technique**
+- Télécharge le **CSV propre** `aide-publique-au-developpement_clean.csv` depuis
+  DagsHub (clé MD5 `e41e1c6c…`, distincte du CSV brut de la branche ML).
+- Conversion CSV (séparateur `;`) → parquet **sans filtrage**.
+- Sortie : `/app/data/processed/apd_clean.parquet` — monté en lecture seule côté
+  `explore-api` (`./data:/data:ro`).
+- Jeu de données : ~79 000 lignes, 50 colonnes (orienté engagements :
+  `Engagements (K EUR)`, `log_engagements`, `Secteur`, `Pays beneficiaire`,
+  `Région`, `Agence`…).
+
+> **Note** — l'`explore-api` construit le schéma des colonnes injecté dans le
+> prompt LLM **au démarrage**. Si le jeu de colonnes change, redémarrer le
+> service : `docker compose restart explore-api`.
+
 ---
 
 ## Schéma d'exécution & dépendances
 
 ```python
+# Branche ML
 t1 >> t2 >> t3 >> [t4a, t4b, t4c] >> t5
+# Branche données (indépendante)
+t_explore
 ```
 
 - Chaîne séquentielle jusqu'à `feature_engineering`.
