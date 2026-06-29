@@ -23,9 +23,12 @@ CLEAN_DIR = "/app/clean_data"
 MODEL_DIR = "/app/models/data"
 
 # ── Config DagsHub S3 ─────────────────────────────────────────────────────────
+# DVC stocke les fichiers par hash MD5 (files/md5/<2 premiers>/<reste>), pas par
+# nom logique. Le MD5 vient de data/raw/aide-publique-au-developpement.csv.dvc.
 DAGSHUB_ENDPOINT = "https://dagshub.com/llecorps/fev26_bmle_agent_apd.s3"
 DAGSHUB_BUCKET   = "dvc"
-DAGSHUB_KEY      = "aide-publique-au-developpement.csv"
+RAW_CSV_MD5      = "87657ce5b6f2da554db6c25b4450dabd"
+DAGSHUB_KEY      = f"files/md5/{RAW_CSV_MD5[:2]}/{RAW_CSV_MD5[2:]}"
 
 default_args = {
     "owner": "airflow",
