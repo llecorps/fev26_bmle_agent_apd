@@ -18,9 +18,11 @@ from datetime import timedelta
 import os
 
 # ── Chemins montés dans les conteneurs ───────────────────────────────────────
-RAW_DIR   = "/app/raw_files"
-CLEAN_DIR = "/app/clean_data"
-MODEL_DIR = "/app/models/data"
+RAW_DIR       = "/app/raw_files"
+CLEAN_DIR     = "/app/clean_data"
+MODEL_DIR     = "/app/models/data"
+# Parquet lu par l'API explore (./data:/data:ro côté explore-api).
+PROCESSED_DIR = "/app/data/processed"
 
 # ── Config DagsHub S3 ─────────────────────────────────────────────────────────
 # DVC stocke les fichiers par hash MD5 (files/md5/<2 premiers>/<reste>), pas par
@@ -29,6 +31,10 @@ DAGSHUB_ENDPOINT = "https://dagshub.com/llecorps/fev26_bmle_agent_apd.s3"
 DAGSHUB_BUCKET   = "dvc"
 RAW_CSV_MD5      = "87657ce5b6f2da554db6c25b4450dabd"
 DAGSHUB_KEY      = f"files/md5/{RAW_CSV_MD5[:2]}/{RAW_CSV_MD5[2:]}"
+# CSV propre (schéma attendu par l'API explore). MD5 de
+# data/raw/aide-publique-au-developpement_clean.csv.dvc.
+CLEAN_CSV_MD5    = "e41e1c6cb177c6168dc0d23a0e6526e6"
+CLEAN_CSV_KEY    = f"files/md5/{CLEAN_CSV_MD5[:2]}/{CLEAN_CSV_MD5[2:]}"
 
 default_args = {
     "owner": "airflow",
@@ -258,6 +264,37 @@ def select_and_save(**context):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TÂCHE — Export du parquet consommé par l'API explore
+# ─────────────────────────────────────────────────────────────────────────────
+def export_explore_parquet():
+    """Alimente l'API explore : télécharge le CSV propre depuis DagsHub et
+    l'écrit en parquet dans data/processed/apd_clean.parquet (monté en lecture
+    seule côté explore-api). Le chatbot lit ce fichier à chaque requête."""
+    import boto3
+    from botocore.client import Config
+    import pandas as pd
+
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=DAGSHUB_ENDPOINT,
+        aws_access_key_id=os.environ["DAGSHUB_ACCESS_KEY"],
+        aws_secret_access_key=os.environ["DAGSHUB_SECRET_KEY"],
+        config=Config(signature_version="s3v4"),
+    )
+
+    os.makedirs(RAW_DIR, exist_ok=True)
+    csv_path = os.path.join(RAW_DIR, "aide-publique-au-developpement_clean.csv")
+    print(f"Téléchargement du CSV propre → {csv_path}")
+    s3.download_file(DAGSHUB_BUCKET, CLEAN_CSV_KEY, csv_path)
+
+    df = pd.read_csv(csv_path, sep=";", low_memory=False)
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+    out = os.path.join(PROCESSED_DIR, "apd_clean.parquet")
+    df.to_parquet(out, index=False)
+    print(f"  ✅ {out} ({len(df)} lignes, {len(df.columns)} colonnes) — API explore alimentée")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Définition du DAG
 # ─────────────────────────────────────────────────────────────────────────────
 with DAG(
@@ -280,4 +317,9 @@ with DAG(
 
     t5 = PythonOperator(task_id="select_and_save", python_callable=select_and_save, provide_context=True)
 
+    t_explore = PythonOperator(task_id="export_explore_parquet", python_callable=export_explore_parquet)
+
+    # Branche ML (entraînement du modèle)
     t1 >> t2 >> t3 >> [t4a, t4b, t4c] >> t5
+    # Branche données (alimente l'API explore), indépendante de la branche ML
+    t_explore
