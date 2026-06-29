@@ -9,7 +9,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
     DAGSHUB_ACCESS_KEY: ${DAGSHUB_ACCESS_KEY:-}
     DAGSHUB_SECRET_KEY: ${DAGSHUB_SECRET_KEY:-}
-    _PIP_ADDITIONAL_REQUIREMENTS: boto3 pyarrow
+    _PIP_ADDITIONAL_REQUIREMENTS: boto3 pyarrow scikit-learn
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
