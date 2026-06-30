@@ -37,26 +37,6 @@ Conséquence : le LLM tourne en **process hôte** (lancé via
 > service compose (vLLM CUDA). Sur Mac, le garder côté hôte est la seule option
 > qui exploite le GPU.
 
-### Démarrer la stack
-
-```bash
-# 1. (une fois) renseigner le token Hugging Face — optionnel pour un modèle public
-cp llm/.env.example llm/.env        # puis éditer HF_TOKEN si nécessaire
-
-# 2. (Airflow) credentials DagsHub dans un .env à la racine (gitignoré)
-#    DAGSHUB_ACCESS_KEY=...  /  DAGSHUB_SECRET_KEY=...
-set -a && source .env && set +a
-
-# 3. construire les données si besoin
-make data            # ou make pull
-
-# 4. terminal A — serveur LLM (process hôte, GPU Metal)
-make llm
-
-# 5. terminal B — toute la stack dockerisée (api, ui, mlflow, airflow, dashboard)
-make up
-```
-
 ### Services & URLs
 
 | Service        | URL                                   | Détails                              |
