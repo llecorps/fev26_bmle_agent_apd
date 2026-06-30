@@ -1,8 +1,9 @@
-# APD — Workflow de modélisation (DVC + DagsHub)
+# APD — Agent analytique & MLOps
 
-Pipeline reproductible de préparation des données pour la modélisation du
-**ratio de don** (`ratio_don`) sur les déclarations françaises d'Aide Publique
-au Développement (CSV brut OCDE/CAD, ~106 000 lignes).
+Plateforme d'exploration et de prédiction sur les déclarations françaises d'Aide
+Publique au Développement (~106 000 lignes) : un **chatbot** qui répond à des
+questions en langage naturel, une **API de prédiction** des montants, le tout
+orchestré par **Airflow**, tracé par **MLflow** et visualisé via un **dashboard**.
 
 ## Chatbot analytique (api + ui + llm)
 
