@@ -75,9 +75,9 @@ Streamlit (ui)  ──HTTP──►  FastAPI (api)  ──HTTP──►  serveur
                                 │
                                 ▼
                   1. génère le code pandas (LLM)
-                  2. validation AST (api/sandbox.py)
+                  2. validation AST (api/explore/sandbox.py)
                   3. exécution sandboxée (python -I, timeout)
-                  4. lit data/processed/apd_clean.parquet (monté :ro)
+                  4. lit data/processed/apd_explore.parquet (monté :ro)
 ```
 
 ### ⚠️ Pourquoi le LLM n'est PAS dans docker compose
@@ -95,37 +95,52 @@ Conséquence : le LLM tourne en **process hôte** (lancé via
 > service compose (vLLM CUDA). Sur Mac, le garder côté hôte est la seule option
 > qui exploite le GPU.
 
-### Démarrer le chatbot
+### Démarrer la stack
 
 ```bash
 # 1. (une fois) renseigner le token Hugging Face — optionnel pour un modèle public
 cp llm/.env.example llm/.env        # puis éditer HF_TOKEN si nécessaire
 
-# 2. construire les données si besoin
+# 2. (Airflow) credentials DagsHub dans un .env à la racine (gitignoré)
+#    DAGSHUB_ACCESS_KEY=...  /  DAGSHUB_SECRET_KEY=...
+set -a && source .env && set +a
+
+# 3. construire les données si besoin
 make data            # ou make pull
 
-# 3. terminal A — serveur LLM (process hôte, GPU Metal)
+# 4. terminal A — serveur LLM (process hôte, GPU Metal)
 make llm
 
-# 4. terminal B — API + UI dockerisés
+# 5. terminal B — toute la stack dockerisée (api, ui, mlflow, airflow, dashboard)
 make up
 ```
 
-- UI : http://localhost:8500
-- API : http://localhost:8081/explore (port hôte ; interne 8080)
+### Services & URLs
 
-Le port hôte de l'API est **8081** par défaut pour éviter la collision avec
-d'autres services sur 8080. Surchargeable : `API_PORT=9000 make up`
-(idem `UI_PORT`). Le port interne reste 8080, donc l'UI joint l'API sans
-changement via le réseau Docker.
+| Service        | URL                                   | Détails                              |
+| -------------- | ------------------------------------- | ------------------------------------ |
+| UI Streamlit   | http://localhost:8500                 | Chatbot d'exploration + prédiction   |
+| API explore    | http://localhost:8081/explore         | Génération + exécution code pandas   |
+| API predict    | http://localhost:8082/predict         | Prédiction du montant (modèle ML)    |
+| MLflow         | http://localhost:5050                 | Tracking, registry modèles & prompts |
+| Airflow        | http://localhost:8080                 | DAG `apd_pipeline` (`admin`/`admin`) |
+| Dashboard Dash | http://localhost:8050                 | Visualisation des données APD        |
+
+Le port hôte de l'API est **8081** par défaut. Surchargeable :
+`API_PORT=9000 make up` (idem `UI_PORT`, `PREDICT_PORT`).
 
 Arrêt : `make down`. Logs : `make logs`.
+
+> **Pipeline Airflow** — l'orchestration horaire (téléchargement DagsHub,
+> nettoyage, entraînement de 3 modèles, sélection du champion, alimentation de
+> l'API explore) est documentée dans [data_airflow.md](data_airflow.md).
+> Déclencher un run : `make airflow-trigger`.
 
 ### Sécurité d'exécution
 
 Le code généré par le LLM est exécuté, donc encadré en profondeur :
 
-1. **Validation AST** ([api/sandbox.py](api/sandbox.py)) avant toute exécution :
+1. **Validation AST** ([api/explore/sandbox.py](api/explore/sandbox.py)) avant toute exécution :
    imports limités à une whitelist (pandas, numpy, json…), blocage de
    `eval`/`exec`/`open`, des dunders et des méthodes d'écriture fichier
    (`to_csv`, `to_pickle`…). Testé : `make test` (18 cas).
@@ -135,33 +150,38 @@ Le code généré par le LLM est exécuté, donc encadré en profondeur :
 
 ### Variables d'environnement (api)
 
-| Variable       | Défaut                                          | Rôle                          |
-| -------------- | ----------------------------------------------- | ----------------------------- |
-| `DATA_PATH`    | `/data/processed/apd_clean.parquet`             | Fichier lu par le code généré |
-| `LLM_URL`      | `http://host.docker.internal:8000/v1/chat/...`  | Endpoint du serveur LLM       |
-| `LLM_MODEL`    | `mlx-community/Mistral-7B-Instruct-v0.3-4bit`   | Modèle servi                  |
-| `EXEC_TIMEOUT` | `30`                                            | Timeout d'exécution (s)       |
+| Variable               | Défaut                                          | Rôle                          |
+| ---------------------- | ----------------------------------------------- | ----------------------------- |
+| `DATA_PATH`            | `/data/processed/apd_explore.parquet`           | Fichier lu par le code généré |
+| `LLM_URL`              | `http://host.docker.internal:8000/v1/chat/...`  | Endpoint du serveur LLM       |
+| `LLM_MODEL`            | `mlx-community/Mistral-7B-Instruct-v0.3-4bit`   | Modèle servi                  |
+| `MLFLOW_TRACKING_URI`  | `http://mlflow:5000`                            | Serveur MLflow (tracing/prompts) |
+| `EXEC_TIMEOUT`         | `30`                                            | Timeout d'exécution (s)       |
 
 ## Arborescence
 
 ```
 data/
   raw/        # CSV source APD (tracké par DVC)
-  processed/  # apd_clean.parquet (sortie de prepare)
+  processed/  # apd_clean.parquet (modèle) + apd_explore.parquet (chatbot)
 metrics/      # metrics/features.json (KPI du pipeline, versionné git)
 models/
-  data/       # X_train, X_test, y_train, y_test en parquet
-  models/     # artefacts modèles (vide pour l'instant)
+  data/       # modèle entraîné (pipeline.joblib, meta.json)
 src/
-  prepare.py  # stage prepare
+  prepare.py  # stage prepare (dataset modèle)
   features.py # stage features
-api/          # FastAPI : génération + validation + exécution du code pandas
-  explore.py  #   endpoint /explore
-  sandbox.py  #   validation AST du code généré
-  test_sandbox.py
+scripts/
+  prepare_explore.py  # CSV brut -> apd_explore.parquet (dataset chatbot)
+  train.py            # entraînement + logging MLflow
+api/
+  explore/    # FastAPI : génération + validation + exécution du code pandas
+  predict/    # FastAPI : prédiction via le modèle ML
 ui/           # Streamlit : interface de chat (app.py)
+dags/         # Airflow : apd_pipeline (cf. data_airflow.md)
+dashboard/    # Dash : visualisation des données (port 8050)
+mlflow/       # serveur MLflow + prompts (register_prompts.py)
 llm/          # serveur LLM hôte (start_vllm_mac.sh, .env.example)
-docker-compose.yml  # services api + ui
+docker-compose.yml  # api, ui, mlflow, postgres, airflow, dashboard
 Makefile      # orchestration (make help)
 dvc.yaml      # définition des stages
 params.yaml   # hyperparamètres

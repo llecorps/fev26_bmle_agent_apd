@@ -61,13 +61,16 @@ llm:  ## Démarre le serveur LLM local (port 8000, lit llm/.env)
 	bash llm/start_vllm_mac.sh
 
 # ---------------------------------------------------------------------------
-# Services Docker (api + ui)
+# Services Docker (api + ui + mlflow + airflow + dashboard)
 # ---------------------------------------------------------------------------
 .PHONY: up
-up: $(DATA)  ## Build + démarre l'API et l'UI (nécessite les données et le LLM)
+up: $(DATA)  ## Build + démarre TOUTE la stack (api, ui, mlflow, airflow, dashboard)
 	$(COMPOSE) up --build -d
-	@echo "UI    : http://localhost:$${UI_PORT:-8500}"
-	@echo "API   : http://localhost:$${API_PORT:-8081}/explore"
+	@echo "UI        : http://localhost:$${UI_PORT:-8500}"
+	@echo "API       : http://localhost:$${API_PORT:-8081}/explore"
+	@echo "MLflow    : http://localhost:5050"
+	@echo "Airflow   : http://localhost:8080  (admin/admin)"
+	@echo "Dashboard : http://localhost:8050"
 	@echo "Rappel: le serveur LLM doit tourner ('make llm' dans un autre terminal)."
 
 .PHONY: down
@@ -77,6 +80,21 @@ down:  ## Arrête et supprime les conteneurs
 .PHONY: logs
 logs:  ## Suit les logs des conteneurs
 	$(COMPOSE) logs -f
+
+# ---------------------------------------------------------------------------
+# Airflow (DAG apd_pipeline)
+# ---------------------------------------------------------------------------
+.PHONY: airflow-trigger
+airflow-trigger:  ## Déclenche manuellement le DAG apd_pipeline
+	$(COMPOSE) exec airflow-scheduler airflow dags trigger apd_pipeline
+
+.PHONY: airflow-runs
+airflow-runs:  ## Liste les runs du DAG apd_pipeline
+	$(COMPOSE) exec airflow-scheduler airflow dags list-runs -d apd_pipeline
+
+.PHONY: airflow-logs
+airflow-logs:  ## Suit les logs des conteneurs Airflow
+	$(COMPOSE) logs -f airflow-scheduler airflow-webserver
 
 # ---------------------------------------------------------------------------
 # Prompts (MLflow Prompt Registry)
