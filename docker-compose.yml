@@ -1,3 +1,29 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
+    DAGSHUB_ACCESS_KEY: ${DAGSHUB_ACCESS_KEY:-}
+    DAGSHUB_SECRET_KEY: ${DAGSHUB_SECRET_KEY:-}
+    _PIP_ADDITIONAL_REQUIREMENTS: boto3 pyarrow scikit-learn numpy==1.26.4
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./raw_files:/app/raw_files
+    - ./clean_data:/app/clean_data
+    - ./models/data:/app/models/data
+    - ./data:/app/data
+  networks:
+    - chat-network
+  depends_on:
+    airflow-postgres:
+      condition: service_healthy
+
 services:
   explore-api:
     build: ./api/explore
@@ -84,10 +110,76 @@ services:
     networks:
       - chat-network
 
+  # ─── PostgreSQL (backend Airflow, distinct de celui de MLflow) ────
+  airflow-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_pg_data:/var/lib/postgresql/data
+    networks:
+      - chat-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+
+  # ─── Airflow ──────────────────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db init &&
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname APD \
+          --role Admin \
+          --email admin@apd.fr
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+
+  # ─── Dashboard Dash ───────────────────────────────
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "8050:8050"
+    volumes:
+      - ./clean_data:/app/clean_data:ro
+      - ./models/data:/app/models/data:ro
+    environment:
+      - CLEAN_DIR=/app/clean_data
+      - MODEL_DIR=/app/models/data
+    networks:
+      - chat-network
+    restart: always
+
 
 volumes:
   mlflow_artifacts:
   pg_data:
+  airflow_pg_data:
 
 networks:
   chat-network:
