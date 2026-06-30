@@ -163,7 +163,7 @@ totalité des données et le sauvegarde pour la production.
   - `/app/models/data/meta.json` — modèle choisi, scores CV, métriques test,
     liste des features, tailles train/test.
 
-### `export_explore_parquet` (branche données)
+### 6. `export_explore_parquet` (branche données)
 
 **Fonctionnel** — alimente l'**API explore** (chatbot) avec des données à jour.
 Le chatbot lit ce parquet à chaque requête pour exécuter le code pandas généré.
@@ -182,9 +182,14 @@ Le chatbot lit ce parquet à chaque requête pour exécuter le code pandas gén�
   monté en lecture seule (`./data:/data:ro`).
 - Jeu de données : ~82 700 lignes, 50 colonnes (1 ligne par projet).
 
-> **Note** — l'`explore-api` construit le schéma des colonnes injecté dans le
-> prompt LLM **au démarrage**. Si le jeu de colonnes change, redémarrer le
-> service : `docker compose restart explore-api`.
+> **Note (schéma)** — l'`explore-api` construit le schéma des colonnes injecté
+> dans le prompt LLM **au démarrage**. Si le jeu de colonnes change, redémarrer
+> le service : `docker compose restart explore-api`.
+
+> **Note (prompts)** — l'`explore-api` charge ses prompts depuis le **MLflow
+> Prompt Registry** (`prompts:/...@champion`). Sur une instance MLflow neuve, les
+> enregistrer une fois avec `make init-prompts`, sinon les requêtes échouent en
+> `RESOURCE_DOES_NOT_EXIST`.
 
 ---
 
