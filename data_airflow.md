@@ -169,14 +169,18 @@ totalité des données et le sauvegarde pour la production.
 Le chatbot lit ce parquet à chaque requête pour exécuter le code pandas généré.
 
 **Technique**
-- Télécharge le **CSV propre** `aide-publique-au-developpement_clean.csv` depuis
-  DagsHub (clé MD5 `e41e1c6c…`, distincte du CSV brut de la branche ML).
-- Conversion CSV (séparateur `;`) → parquet **sans filtrage**.
-- Sortie : `/app/data/processed/apd_clean.parquet` — monté en lecture seule côté
-  `explore-api` (`./data:/data:ro`).
-- Jeu de données : ~79 000 lignes, 50 colonnes (orienté engagements :
-  `Engagements (K EUR)`, `log_engagements`, `Secteur`, `Pays beneficiaire`,
-  `Région`, `Agence`…).
+- Télécharge le **CSV brut** `aide-publique-au-developpement.csv` depuis DagsHub
+  (clé MD5 `87657ce5…`).
+- Applique la **même transformation** que `scripts/prepare_explore.py`
+  (importé via `build_explore_parquet`, monté dans le conteneur sous
+  `/app/scripts`) : normalisation des types, fusions de libellés, déduplication
+  par projet (SNPC), conservation de la dimension temporelle
+  (`date_engagement`, `annee_engagement`, `mois_engagement`) et des montants.
+- Paramètres (séparateur, encodage, marqueurs CAD) lus depuis `params.yaml`.
+- Sortie : `/app/data/processed/apd_explore.parquet` — **exactement le fichier
+  lu par l'`explore-api`** (`DATA_PATH=/data/processed/apd_explore.parquet`),
+  monté en lecture seule (`./data:/data:ro`).
+- Jeu de données : ~82 700 lignes, 50 colonnes (1 ligne par projet).
 
 > **Note** — l'`explore-api` construit le schéma des colonnes injecté dans le
 > prompt LLM **au démarrage**. Si le jeu de colonnes change, redémarrer le

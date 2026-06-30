@@ -96,15 +96,18 @@ FUSIONS_AGENCE = {
 FUSIONS_PAYS = {"Türkiye": "Turquie"}
 
 
-def main() -> None:
-    params = yaml.safe_load((ROOT / "params.yaml").read_text())["prepare"]
+def build_explore_parquet(raw_csv_path, output_path, *, csv_separator=";",
+                          encoding="utf-8-sig", markers=()):
+    """Transforme le CSV brut APD en dataset d'exploration parquet.
 
-    df = pd.read_csv(
-        ROOT / params["raw_path"],
-        sep=params["csv_separator"],
-        encoding=params.get("encoding", "utf-8-sig"),
-        low_memory=False,
-    )
+    Réutilisable hors du contexte DVC (ex. tâche Airflow) : on passe
+    explicitement le chemin du CSV brut, la sortie, le séparateur et les
+    marqueurs CAD, au lieu de les lire depuis params.yaml.
+    """
+    raw_csv_path = Path(raw_csv_path)
+    output_path = Path(output_path)
+
+    df = pd.read_csv(raw_csv_path, sep=csv_separator, encoding=encoding, low_memory=False)
     print(f"[0] CSV brut : {df.shape[0]:,} lignes x {df.shape[1]} colonnes")
 
     # ── 1. Normalisation des types ──────────────────────────────────────
@@ -168,7 +171,7 @@ def main() -> None:
     print("[4] Fusions de libellés appliquées")
 
     # ── 5. Marqueurs CAD -> binaire (0/1) ───────────────────────────────
-    for col in params.get("markers", []):
+    for col in markers:
         if col in df.columns:
             df[col] = (pd.to_numeric(df[col], errors="coerce").fillna(0) > 0).astype(int)
 
@@ -206,13 +209,26 @@ def main() -> None:
     if SNPC_KEY in df.columns:
         df = df.drop(columns=[SNPC_KEY])
 
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(OUTPUT, index=False)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(output_path, index=False)
     print(f"[FINAL] Dataset d'exploration : {df.shape[0]:,} lignes x {df.shape[1]} colonnes")
-    print(f"        -> {OUTPUT.relative_to(ROOT)}")
+    print(f"        -> {output_path}")
     temporelles = [c for c in df.columns
                    if c in ("date_engagement", "annee_engagement", "mois_engagement")]
     print(f"        Colonnes temporelles conservées : {temporelles}")
+    return df
+
+
+def main() -> None:
+    """Point d'entrée DVC : lit params.yaml puis génère apd_explore.parquet."""
+    params = yaml.safe_load((ROOT / "params.yaml").read_text())["prepare"]
+    build_explore_parquet(
+        raw_csv_path=ROOT / params["raw_path"],
+        output_path=OUTPUT,
+        csv_separator=params["csv_separator"],
+        encoding=params.get("encoding", "utf-8-sig"),
+        markers=params.get("markers", []),
+    )
 
 
 if __name__ == "__main__":

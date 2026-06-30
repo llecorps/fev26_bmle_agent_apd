@@ -18,6 +18,8 @@ x-airflow-common: &airflow-common
     - ./clean_data:/app/clean_data
     - ./models/data:/app/models/data
     - ./data:/app/data
+    - ./scripts:/app/scripts:ro
+    - ./params.yaml:/app/params.yaml:ro
   networks:
     - chat-network
   depends_on:

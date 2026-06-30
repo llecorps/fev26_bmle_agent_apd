@@ -23,6 +23,9 @@ CLEAN_DIR     = "/app/clean_data"
 MODEL_DIR     = "/app/models/data"
 # Parquet lu par l'API explore (./data:/data:ro côté explore-api).
 PROCESSED_DIR = "/app/data/processed"
+# Code de transformation + params.yaml montés dans le conteneur.
+SCRIPTS_DIR   = "/app/scripts"
+PARAMS_PATH   = "/app/params.yaml"
 
 # ── Config DagsHub S3 ─────────────────────────────────────────────────────────
 # DVC stocke les fichiers par hash MD5 (files/md5/<2 premiers>/<reste>), pas par
@@ -31,10 +34,6 @@ DAGSHUB_ENDPOINT = "https://dagshub.com/llecorps/fev26_bmle_agent_apd.s3"
 DAGSHUB_BUCKET   = "dvc"
 RAW_CSV_MD5      = "87657ce5b6f2da554db6c25b4450dabd"
 DAGSHUB_KEY      = f"files/md5/{RAW_CSV_MD5[:2]}/{RAW_CSV_MD5[2:]}"
-# CSV propre (schéma attendu par l'API explore). MD5 de
-# data/raw/aide-publique-au-developpement_clean.csv.dvc.
-CLEAN_CSV_MD5    = "e41e1c6cb177c6168dc0d23a0e6526e6"
-CLEAN_CSV_KEY    = f"files/md5/{CLEAN_CSV_MD5[:2]}/{CLEAN_CSV_MD5[2:]}"
 
 default_args = {
     "owner": "airflow",
@@ -267,12 +266,18 @@ def select_and_save(**context):
 # TÂCHE — Export du parquet consommé par l'API explore
 # ─────────────────────────────────────────────────────────────────────────────
 def export_explore_parquet():
-    """Alimente l'API explore : télécharge le CSV propre depuis DagsHub et
-    l'écrit en parquet dans data/processed/apd_clean.parquet (monté en lecture
-    seule côté explore-api). Le chatbot lit ce fichier à chaque requête."""
+    """Alimente l'API explore : télécharge le CSV brut depuis DagsHub et applique
+    la même transformation que scripts/prepare_explore.py pour produire
+    data/processed/apd_explore.parquet (le fichier lu par l'explore-api). Le
+    chatbot lit ce parquet à chaque requête."""
+    import sys
     import boto3
+    import yaml
     from botocore.client import Config
-    import pandas as pd
+
+    # Le code de transformation et params.yaml sont montés dans le conteneur.
+    sys.path.insert(0, SCRIPTS_DIR)
+    from prepare_explore import build_explore_parquet
 
     s3 = boto3.client(
         "s3",
@@ -283,15 +288,24 @@ def export_explore_parquet():
     )
 
     os.makedirs(RAW_DIR, exist_ok=True)
-    csv_path = os.path.join(RAW_DIR, "aide-publique-au-developpement_clean.csv")
-    print(f"Téléchargement du CSV propre → {csv_path}")
-    s3.download_file(DAGSHUB_BUCKET, CLEAN_CSV_KEY, csv_path)
+    csv_path = os.path.join(RAW_DIR, "aide-publique-au-developpement.csv")
+    print(f"Téléchargement du CSV brut → {csv_path}")
+    s3.download_file(DAGSHUB_BUCKET, DAGSHUB_KEY, csv_path)
 
-    df = pd.read_csv(csv_path, sep=";", low_memory=False)
+    # Paramètres de nettoyage (séparateur, encodage, marqueurs CAD) depuis params.yaml.
+    with open(PARAMS_PATH) as f:
+        prep = yaml.safe_load(f)["prepare"]
+
     os.makedirs(PROCESSED_DIR, exist_ok=True)
-    out = os.path.join(PROCESSED_DIR, "apd_clean.parquet")
-    df.to_parquet(out, index=False)
-    print(f"  ✅ {out} ({len(df)} lignes, {len(df.columns)} colonnes) — API explore alimentée")
+    out = os.path.join(PROCESSED_DIR, "apd_explore.parquet")
+    build_explore_parquet(
+        raw_csv_path=csv_path,
+        output_path=out,
+        csv_separator=prep["csv_separator"],
+        encoding=prep.get("encoding", "utf-8-sig"),
+        markers=prep.get("markers", []),
+    )
+    print(f"  ✅ {out} — API explore alimentée")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
