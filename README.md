@@ -80,6 +80,35 @@ Le code généré par le LLM est exécuté, donc encadré en profondeur :
 | `MLFLOW_TRACKING_URI`  | `http://mlflow:5000`                            | Serveur MLflow (tracing/prompts) |
 | `EXEC_TIMEOUT`         | `30`                                            | Timeout d'exécution (s)       |
 
+## Dashboard (Dash / Plotly)
+
+Application **Dash** servie sur http://localhost:8050, alimentée par le DAG
+Airflow (cf. [data_airflow.md](data_airflow.md)).
+
+```
+DAG Airflow ──► clean_data/apd_clean.csv ──┐
+DAG Airflow ──► models/data/meta.json ─────┴──► Dashboard Dash (:8050)
+                                                KPIs · graphiques · carte modèle
+```
+
+**Fonctionnement** ([dashboard/app.py](dashboard/app.py)) :
+
+- **Sources** (montées en lecture seule) : `clean_data/apd_clean.csv` (données
+  nettoyées par le DAG) et `models/data/meta.json` (métriques du modèle champion).
+- **Layout** : barre de filtres (année, région, secteur) + KPIs (montant total,
+  nb projets, pays, ticket moyen) + 4 graphiques (top 10 pays, secteurs,
+  évolution annuelle, montants par région) + carte du modèle actif.
+- **Réactivité** : les *callbacks* Dash (`@app.callback(Output, Input)`) se
+  ré-exécutent dès qu'un filtre change — ils relisent le CSV, l'agrègent et
+  renvoient les figures Plotly.
+- **Auto-refresh** : un `dcc.Interval` recharge les données **toutes les 60 s**,
+  donc le dashboard reflète automatiquement le dernier run du DAG.
+
+| Variable    | Défaut             | Rôle                          |
+| ----------- | ------------------ | ----------------------------- |
+| `CLEAN_DIR` | `/app/clean_data`  | Dossier du CSV nettoyé        |
+| `MODEL_DIR` | `/app/models/data` | Dossier des métriques modèle  |
+
 ## Commandes make
 
 ```
