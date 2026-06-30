@@ -100,6 +100,28 @@ Le code généré par le LLM est exécuté, donc encadré en profondeur :
 | `MLFLOW_TRACKING_URI`  | `http://mlflow:5000`                            | Serveur MLflow (tracing/prompts) |
 | `EXEC_TIMEOUT`         | `30`                                            | Timeout d'exécution (s)       |
 
+## Commandes make
+
+```
+make install         Crée le venv et installe les dépendances du pipeline
+make data            Construit les données (dvc repro) si nécessaire
+make repro           Force le rejeu complet du pipeline DVC
+make pull            Récupère les données depuis le remote DagsHub
+make push            Envoie les données vers le remote DagsHub
+make metrics         Affiche les métriques du pipeline
+make llm             Démarre le serveur LLM local (port 8000, lit llm/.env)
+make init-prompts    Enregistre les prompts (génération + réparation) et bascule l'alias @champion
+make up              Build + démarre TOUTE la stack (api, ui, mlflow, airflow, dashboard)
+make down            Arrête et supprime les conteneurs
+make logs            Suit les logs des conteneurs
+make airflow-trigger Déclenche manuellement le DAG apd_pipeline
+make airflow-runs    Liste les runs du DAG apd_pipeline
+make airflow-logs    Suit les logs des conteneurs Airflow
+make test            Lance les tests (sandbox de l'API)
+make clean           Supprime les caches Python
+make help            Affiche l'aide
+```
+
 ## Arborescence
 
 ```
