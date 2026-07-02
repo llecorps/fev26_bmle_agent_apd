@@ -1,8 +1,12 @@
 fastapi==0.115.0
 uvicorn==0.30.0
 pandas==2.2.3
-numpy>=2.0.0
+numpy<2
 scikit-learn==1.7.2
 joblib==1.4.0
+pyarrow>=14.0.0
 mlflow>=3.0.0
 psycopg2-binary==2.9.9
+prometheus_client==0.21.0
+evidently==0.4.40
+scipy>=1.11

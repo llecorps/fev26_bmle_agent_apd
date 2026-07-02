@@ -44,9 +44,11 @@ services:
     ports:
       - "${PREDICT_PORT:-8082}:8080"
     environment:
-      - MODEL_PATH=/models/data/pipline.joblib
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MONITORING_DIR=/app/monitoring
     volumes:
       - ./models/data:/app/model:ro
+      - ./data/monitoring:/app/monitoring:ro
     networks:
       - chat-network
 
@@ -178,10 +180,59 @@ services:
     restart: always
 
 
+  # ─── Monitoring : Prometheus + Grafana + node-exporter ────────────
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployment/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deployment/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    depends_on:
+      - predict-api
+      - node-exporter
+    networks:
+      - chat-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      # Provisioning "as code" : datasource + providers de dashboards.
+      - ./deployment/grafana/provisioning:/etc/grafana/provisioning:ro
+      # Fichiers JSON des dashboards chargés automatiquement au démarrage.
+      - ./deployment/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - chat-network
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    ports:
+      - "9100:9100"
+    networks:
+      - chat-network
+    restart: unless-stopped
+
+
 volumes:
   mlflow_artifacts:
   pg_data:
   airflow_pg_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   chat-network:

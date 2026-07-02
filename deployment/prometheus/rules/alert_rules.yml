@@ -1,0 +1,37 @@
+# Règles d'alerte Prometheus — APD monitoring.
+groups:
+  - name: api_alerts
+    rules:
+      # L'API de prédiction ne répond plus au scrape depuis > 1 min.
+      - alert: PredictApiDown
+        expr: up{job="predict-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "L'API de prédiction est DOWN"
+          description: "La cible predict-api ne répond plus au scrape Prometheus depuis 1 minute."
+
+      # Taux d'erreurs 5xx élevé sur l'API (> 5 % sur 5 min).
+      - alert: PredictApiHighErrorRate
+        expr: |
+          sum(rate(api_requests_total{status_code=~"5.."}[5m]))
+            / sum(rate(api_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taux d'erreurs 5xx élevé"
+          description: "Plus de 5 % des requêtes de l'API renvoient une erreur serveur (5 dernières minutes)."
+
+  - name: model_alerts
+    rules:
+      # Dérive des données détectée (métrique ML mise à jour par /evaluate).
+      - alert: ModelDataDriftDetected
+        expr: evidently_data_drift_detected_status == 1
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Dérive des données détectée"
+          description: "Evidently signale une dérive globale du dataset (features) vs la référence de janvier."

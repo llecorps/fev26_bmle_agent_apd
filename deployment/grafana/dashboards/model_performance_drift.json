@@ -1,0 +1,87 @@
+{
+  "uid": "apd-model-drift",
+  "title": "Model Performance & Drift",
+  "tags": ["apd", "model", "drift"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "RMSE (log1p)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "model_rmse_score", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "MAE (log1p)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "model_mae_score", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "R²",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "targets": [{ "expr": "model_r2_score", "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Dérive détectée",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "NON", "color": "green" } } },
+            { "type": "value", "options": { "1": { "text": "OUI", "color": "red" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null }, { "color": "red", "value": 1 }
+          ] }
+        },
+        "overrides": []
+      },
+      "targets": [{ "expr": "evidently_data_drift_detected_status", "refId": "A" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Scores du modèle dans le temps",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "model_rmse_score", "legendFormat": "RMSE", "refId": "A" },
+        { "expr": "model_mae_score", "legendFormat": "MAE", "refId": "B" },
+        { "expr": "model_r2_score", "legendFormat": "R2", "refId": "C" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Part de features en dérive (0..1)",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 0.3 },
+            { "color": "red", "value": 0.5 }
+          ] }
+        },
+        "overrides": []
+      },
+      "targets": [{ "expr": "model_dataset_drift_share", "legendFormat": "drift share", "refId": "A" }]
+    }
+  ]
+}

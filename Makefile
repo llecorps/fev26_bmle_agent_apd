@@ -64,13 +64,16 @@ llm:  ## Démarre le serveur LLM local (port 8000, lit llm/.env)
 # Services Docker (api + ui + mlflow + airflow + dashboard)
 # ---------------------------------------------------------------------------
 .PHONY: up
-up: $(DATA)  ## Build + démarre TOUTE la stack (api, ui, mlflow, airflow, dashboard)
+up: $(DATA) monitoring-data  ## Build + démarre TOUTE la stack (api, ui, mlflow, airflow, dashboard, monitoring)
 	$(COMPOSE) up --build -d
-	@echo "UI        : http://localhost:$${UI_PORT:-8500}"
-	@echo "API       : http://localhost:$${API_PORT:-8081}/explore"
-	@echo "MLflow    : http://localhost:5050"
-	@echo "Airflow   : http://localhost:8080  (admin/admin)"
-	@echo "Dashboard : http://localhost:8050"
+	@echo "UI         : http://localhost:$${UI_PORT:-8500}"
+	@echo "API        : http://localhost:$${API_PORT:-8081}/explore"
+	@echo "Predict API: http://localhost:$${PREDICT_PORT:-8082}/metrics"
+	@echo "MLflow     : http://localhost:5050"
+	@echo "Airflow    : http://localhost:8080  (admin/admin)"
+	@echo "Dashboard  : http://localhost:8050"
+	@echo "Prometheus : http://localhost:9090"
+	@echo "Grafana    : http://localhost:3000  (admin/admin)"
 	@echo "Rappel: le serveur LLM doit tourner ('make llm' dans un autre terminal)."
 
 .PHONY: down
@@ -80,6 +83,22 @@ down:  ## Arrête et supprime les conteneurs
 .PHONY: logs
 logs:  ## Suit les logs des conteneurs
 	$(COMPOSE) logs -f
+
+# ---------------------------------------------------------------------------
+# Monitoring (Prometheus + Grafana + Evidently)
+# ---------------------------------------------------------------------------
+MONITORING_DATA := data/monitoring/reference_january.parquet
+
+.PHONY: monitoring-data
+monitoring-data: $(MONITORING_DATA)  ## Prépare les données de référence/courantes (/evaluate)
+
+$(MONITORING_DATA):
+	$(PYTHON) scripts/prepare_monitoring.py
+
+.PHONY: evaluate
+evaluate:  ## Déclenche /evaluate sur la predict-api (met à jour les métriques ML)
+	curl -s -X POST http://localhost:$${PREDICT_PORT:-8082}/evaluate \
+		-H "Content-Type: application/json" -d '{}' | python3 -m json.tool
 
 # ---------------------------------------------------------------------------
 # Airflow (DAG apd_pipeline)
